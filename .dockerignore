@@ -1,0 +1,13 @@
+.git
+.gitignore
+build
+local
+team-members-week6-works
+__MACOSX
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.o
+*.obj
+*.exe

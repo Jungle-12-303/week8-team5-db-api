@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460">
+  <defs>
+    <style>
+      .title { font: 700 28px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #1f2937; }
+      .label { font: 600 19px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #111827; }
+      .small { font: 500 14px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #374151; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 18; }
+      .accent1 { fill: #ecfeff; stroke: #0891b2; }
+      .accent2 { fill: #f0fdf4; stroke: #16a34a; }
+      .accent3 { fill: #fff7ed; stroke: #ea580c; }
+      .arrow { stroke: #475569; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="460" fill="#fffdfa"/>
+  <text x="60" y="55" class="title">INSERT 흐름: 자동 ID 부여와 인덱스 등록</text>
+
+  <rect x="60" y="120" width="160" height="90" class="box accent1"/>
+  <text x="104" y="160" class="label">1. 입력</text>
+  <text x="90" y="185" class="small">INSERT SQL</text>
+
+  <rect x="260" y="120" width="180" height="90" class="box accent1"/>
+  <text x="302" y="160" class="label">2. 파싱</text>
+  <text x="286" y="185" class="small">컬럼 / 값 추출</text>
+
+  <rect x="480" y="120" width="210" height="90" class="box accent2"/>
+  <text x="523" y="155" class="label">3. executor</text>
+  <text x="491" y="180" class="small">다음 __internal_id 계산</text>
+  <text x="492" y="200" class="small">필요하면 인덱스 재구성 후 사용</text>
+
+  <rect x="730" y="120" width="200" height="90" class="box accent3"/>
+  <text x="790" y="160" class="label">4. storage</text>
+  <text x="758" y="185" class="small">CSV 끝에 새 행 append</text>
+
+  <rect x="970" y="120" width="170" height="90" class="box accent2"/>
+  <text x="1010" y="160" class="label">5. index</text>
+  <text x="977" y="185" class="small">__internal_id -> offset 등록</text>
+
+  <path d="M220 165 L260 165" class="arrow"/>
+  <path d="M440 165 L480 165" class="arrow"/>
+  <path d="M690 165 L730 165" class="arrow"/>
+  <path d="M930 165 L970 165" class="arrow"/>
+
+  <rect x="220" y="280" width="760" height="110" class="box"/>
+  <text x="255" y="325" class="label">실패 처리 규칙</text>
+  <text x="255" y="355" class="small">CSV 저장은 영속 기준이므로 append가 성공한 뒤 인덱스 등록이 실패하면</text>
+  <text x="255" y="378" class="small">메모리 인덱스를 무효화하고, 다음 id 조회 시 CSV를 다시 읽어 인덱스를 재구성한다.</text>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "name": "jungle-sql-processor-2nd",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools"
+      ]
+    }
+  },
+  "postCreateCommand": "bash scripts/docker-build.sh && bash scripts/docker-test.sh"
+}

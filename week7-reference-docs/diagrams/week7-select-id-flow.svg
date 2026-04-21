@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470">
+  <defs>
+    <style>
+      .title { font: 700 28px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #1f2937; }
+      .label { font: 600 19px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #111827; }
+      .small { font: 500 14px 'Segoe UI', 'Malgun Gothic', sans-serif; fill: #374151; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 18; }
+      .blue { fill: #eff6ff; stroke: #2563eb; }
+      .green { fill: #f0fdf4; stroke: #16a34a; }
+      .orange { fill: #fff7ed; stroke: #ea580c; }
+      .arrow { stroke: #475569; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 8 8; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="470" fill="#fcfffd"/>
+  <text x="60" y="55" class="title">SELECT 흐름: WHERE id = ... 인덱스 조회</text>
+
+  <rect x="55" y="125" width="180" height="90" class="box blue"/>
+  <text x="102" y="165" class="label">1. SQL 입력</text>
+  <text x="76" y="190" class="small">SELECT ... WHERE id = 1000</text>
+
+  <rect x="280" y="125" width="180" height="90" class="box blue"/>
+  <text x="333" y="165" class="label">2. parser</text>
+  <text x="316" y="190" class="small">WHERE 조건 해석</text>
+
+  <rect x="505" y="125" width="210" height="90" class="box green"/>
+  <text x="552" y="160" class="label">3. executor</text>
+  <text x="513" y="185" class="small">WHERE id 를 내부 예약 키로 해석</text>
+  <text x="548" y="205" class="small">값을 정수로 검증</text>
+
+  <rect x="760" y="70" width="200" height="90" class="box orange"/>
+  <text x="804" y="110" class="label">4-A index</text>
+  <text x="791" y="135" class="small">필요하면 CSV로 재구성</text>
+
+  <rect x="760" y="190" width="200" height="90" class="box orange"/>
+  <text x="798" y="230" class="label">4-B search</text>
+  <text x="781" y="255" class="small">__internal_id -> offset 탐색</text>
+
+  <rect x="1000" y="125" width="155" height="90" class="box blue"/>
+  <text x="1038" y="165" class="label">5. storage</text>
+  <text x="1018" y="190" class="small">offset 행만 읽기</text>
+
+  <path d="M235 170 L280 170" class="arrow"/>
+  <path d="M460 170 L505 170" class="arrow"/>
+  <path d="M715 155 L760 115" class="arrow"/>
+  <path d="M860 160 L860 190" class="arrow"/>
+  <path d="M960 235 L1000 170" class="arrow"/>
+
+  <path d="M610 240 L610 330 L1060 330 L1060 215" class="arrow dashed"/>
+  <text x="535" y="360" class="small">비교: WHERE id 가 아니면 이 경로를 타지 않고 기존 CSV 선형 탐색으로 내려간다.</text>
+</svg>

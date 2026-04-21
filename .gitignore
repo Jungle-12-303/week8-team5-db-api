@@ -1,0 +1,40 @@
+# Build outputs
+build/
+
+# C / native binaries and objects
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.so
+*.dll
+*.dylib
+*.lib
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.stackdump
+
+# Generated tooling files
+compile_commands.json
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+__MACOSX/
+
+# Editor settings
+.vscode/
+.idea/
+
+# Local notes and archived team references
+/local/
+/team-members-week6-works/
+/week6-reference-docs
+/week7-reference-docs
+!/week7-reference-docs/
+!/week7-reference-docs/architecture.md
+!/week7-reference-docs/requirements.md

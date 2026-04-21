@@ -1,0 +1,257 @@
+#include "sqlparser/common/platform.h"
+#include "sqlparser/common/util.h"
+#include "sqlparser/server/server.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <windows.h>
+#define MAKE_DIR(path) _mkdir(path)
+#define CLOSE_WRITE(socket_fd) shutdown((socket_fd), SD_SEND)
+#else
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#define MAKE_DIR(path) mkdir(path, 0755)
+#define CLOSE_WRITE(socket_fd) shutdown((socket_fd), SHUT_WR)
+#endif
+
+static int api_temp_counter = 0;
+static int next_test_port = 18080;
+
+static void build_child_path(char *buffer, size_t size, const char *root, const char *child) {
+    snprintf(buffer, size, "%s/%s", root, child);
+}
+
+static int write_text_file(const char *path, const char *content) {
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        return 0;
+    }
+    fputs(content, file);
+    fclose(file);
+    return 1;
+}
+
+static int create_test_dirs(char *root, size_t root_size, char *schema_dir, size_t schema_size, char *data_dir, size_t data_size) {
+    long suffix = (long)time(NULL);
+    api_temp_counter++;
+
+    snprintf(root, root_size, "build/tests/api_tmp_%ld_%d", suffix, api_temp_counter);
+    build_child_path(schema_dir, schema_size, root, "schema");
+    build_child_path(data_dir, data_size, root, "data");
+
+    MAKE_DIR("build");
+    MAKE_DIR("build/tests");
+    if (MAKE_DIR(root) != 0) {
+        return 0;
+    }
+    if (MAKE_DIR(schema_dir) != 0) {
+        return 0;
+    }
+    if (MAKE_DIR(data_dir) != 0) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static void sleep_briefly(void) {
+#ifdef _WIN32
+    Sleep(100);
+#else
+    usleep(100000);
+#endif
+}
+
+static int connect_to_server(const char *host, int port, sql_socket_t *socket_out) {
+    char port_text[16];
+    struct addrinfo hints;
+    struct addrinfo *result = NULL;
+    struct addrinfo *current;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    snprintf(port_text, sizeof(port_text), "%d", port);
+
+    if (getaddrinfo(host, port_text, &hints, &result) != 0) {
+        return 0;
+    }
+
+    for (current = result; current != NULL; current = current->ai_next) {
+        sql_socket_t socket_fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
+        if (socket_fd == SQL_INVALID_SOCKET) {
+            continue;
+        }
+
+        if (connect(socket_fd, current->ai_addr, (int)current->ai_addrlen) == 0) {
+            freeaddrinfo(result);
+            *socket_out = socket_fd;
+            return 1;
+        }
+
+        sql_platform_close_socket(socket_fd);
+    }
+
+    freeaddrinfo(result);
+    return 0;
+}
+
+static int send_all(sql_socket_t socket_fd, const char *buffer, size_t length) {
+    size_t offset = 0;
+
+    while (offset < length) {
+        int sent = send(socket_fd, buffer + offset, (int)(length - offset), 0);
+        if (sent <= 0) {
+            return 0;
+        }
+        offset += (size_t)sent;
+    }
+
+    return 1;
+}
+
+static int send_http_request(const char *host, int port, const char *request, char *response, size_t response_size) {
+    sql_socket_t socket_fd;
+    size_t offset = 0;
+
+    if (!connect_to_server(host, port, &socket_fd)) {
+        return 0;
+    }
+
+    if (!send_all(socket_fd, request, strlen(request))) {
+        sql_platform_close_socket(socket_fd);
+        return 0;
+    }
+
+    CLOSE_WRITE(socket_fd);
+    while (offset + 1 < response_size) {
+        int received = recv(socket_fd, response + offset, (int)(response_size - offset - 1), 0);
+        if (received <= 0) {
+            break;
+        }
+        offset += (size_t)received;
+    }
+
+    response[offset] = '\0';
+    sql_platform_close_socket(socket_fd);
+    return 1;
+}
+
+static int expect_contains(const char *response, const char *needle, const char *name) {
+    if (strstr(response, needle) == NULL) {
+        fprintf(stderr, "[FAIL] %s\n", name);
+        fprintf(stderr, "response was:\n%s\n", response);
+        return 0;
+    }
+
+    printf("[PASS] %s\n", name);
+    return 1;
+}
+
+int run_api_server_tests(void) {
+    char root[160];
+    char schema_dir[192];
+    char data_dir[192];
+    char schema_path[224];
+    char data_path[224];
+    char response[8192];
+    char request[2048];
+    SqlApiServerConfig config;
+    SqlApiServer *server = NULL;
+    char error[256];
+    int port = next_test_port++;
+    int failures = 0;
+    const char *json_body = "{\"sql\":\"SELECT name FROM users WHERE age = 20;\"}";
+
+    if (!create_test_dirs(root, sizeof(root), schema_dir, sizeof(schema_dir), data_dir, sizeof(data_dir))) {
+        fprintf(stderr, "[FAIL] create API server test directories\n");
+        return 1;
+    }
+
+    build_child_path(schema_path, sizeof(schema_path), schema_dir, "users.meta");
+    build_child_path(data_path, sizeof(data_path), data_dir, "users.csv");
+    if (!write_text_file(schema_path, "table=users\ncolumns=name,age\n") ||
+        !write_text_file(data_path, "name,age\nAlice,20\nBob,21\n")) {
+        fprintf(stderr, "[FAIL] write API server test dataset\n");
+        return 1;
+    }
+
+    sqlapi_server_config_set_defaults(&config);
+    config.port = port;
+    config.worker_count = 2;
+    config.queue_capacity = 8;
+    config.schema_dir = schema_dir;
+    config.data_dir = data_dir;
+
+    if (!sqlapi_server_create(&server, &config, error, sizeof(error))) {
+        fprintf(stderr, "[FAIL] create API server: %s\n", error);
+        return 1;
+    }
+
+    if (!sqlapi_server_start(server, error, sizeof(error))) {
+        fprintf(stderr, "[FAIL] start API server: %s\n", error);
+        sqlapi_server_destroy(server);
+        return 1;
+    }
+
+    sleep_briefly();
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET /health\n");
+        failures++;
+    } else {
+        failures += !expect_contains(response, "HTTP/1.1 200 OK", "GET /health returns 200");
+        failures += !expect_contains(response, "\"status\":\"ok\"", "GET /health returns ok status");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen(json_body),
+             json_body);
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query\n");
+        failures++;
+    } else {
+        failures += !expect_contains(response, "HTTP/1.1 200 OK", "POST /query returns 200");
+        failures += !expect_contains(response, "\"statement_type\":\"select\"", "POST /query reports select type");
+        failures += !expect_contains(response, "Alice", "POST /query returns SELECT output");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "POST /query HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Content-Type: application/json\r\n"
+                           "\r\n"
+                           "{\"sql\":\"SELECT * FROM users;\"}",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query without Content-Length\n");
+        failures++;
+    } else {
+        failures += !expect_contains(response, "HTTP/1.1 411 Length Required", "POST /query without Content-Length returns 411");
+        failures += !expect_contains(response, "\"code\":\"CONTENT_LENGTH_REQUIRED\"", "POST /query without Content-Length returns correct error code");
+    }
+
+    sqlapi_server_request_shutdown(server);
+    sqlapi_server_wait(server);
+    sqlapi_server_destroy(server);
+    return failures == 0 ? 0 : 1;
+}
