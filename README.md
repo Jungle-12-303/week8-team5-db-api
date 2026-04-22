@@ -122,8 +122,8 @@ client
 ### 6.4 현재 검증 상태
 
 - 구현 정책은 위와 같이 적용되어 있습니다.
-- 자동 테스트로 이미 검증된 항목은 `queue full -> 503`, 시작 옵션 검증, 주요 HTTP/SQL 오류 매핑입니다.
-- 같은 테이블 직렬화, 다른 테이블 병렬 처리, graceful shutdown drain, 재시작 후 복구성은 문서화돼 있으나 아직 자동 테스트를 추가 보강할 예정입니다.
+- 자동 테스트로 `queue full -> 503`, 시작 옵션 검증, 주요 HTTP/SQL 오류 매핑, 정확한 header/body/SQL 경계값, 같은 테이블 직렬화, 다른 테이블 병렬 처리, alias lock 정규화, graceful shutdown drain, 재시작 후 복구성을 검증합니다.
+- `SCHEMA_LOAD_ERROR`, `STORAGE_IO_ERROR`, `INDEX_REBUILD_ERROR`, `ENGINE_EXECUTION_ERROR`, `INTERNAL_ERROR`도 자동 테스트에서 강제로 재현합니다.
 
 ## 7. 지원 범위와 제약
 
@@ -354,31 +354,26 @@ curl -i -X POST http://127.0.0.1:8080/query \
 - `GET /` 루트 페이지 응답
 - `GET /health` 정상/비정상 요청
 - `POST /query` 정상 요청
-- `Content-Type`, `Content-Length`, header/body 한도 검증
+- `Content-Type`, `Content-Length`, folded header, header/body/SQL 한도 및 정확한 경계값 검증
 - `INVALID_JSON`, `MISSING_SQL_FIELD`, `SQL_LEX_ERROR`, `SQL_PARSE_ERROR`, `UNSUPPORTED_SQL`, `INVALID_SQL_ARGUMENT`
-- `STORAGE_IO_ERROR`
+- `SCHEMA_LOAD_ERROR`, `STORAGE_IO_ERROR`, `INDEX_REBUILD_ERROR`, `ENGINE_EXECUTION_ERROR`, `INTERNAL_ERROR`
 - 서버 시작 옵션 검증
 - queue full 시 `503 QUEUE_FULL`
+- 같은 테이블 직렬화 / 다른 테이블 병렬 처리 / alias lock 정규화
+- graceful shutdown drain과 종료 후 신규 연결 거부
+- 재시작 후 조회 복구와 인덱스 rebuild 경로 유지
 
-### 11.3 현재 자동 테스트가 아직 보강해야 할 항목
-
-- 같은 테이블 동시 접근 직렬화
-- 다른 테이블 병렬 처리
-- graceful shutdown drain 보장
-- 재시작 후 데이터 조회 가능 여부
-- `INDEX_REBUILD_ERROR`, `ENGINE_EXECUTION_ERROR`, `INTERNAL_ERROR`의 강제 재현 테스트
-
-### 11.4 테스트 실행
+### 11.3 테스트 실행
 
 ```bash
 make test
 ```
 
-### 11.5 최근 검증 결과
+### 11.4 최근 검증 결과
 
 현재 작업 트리 기준으로 `make test`를 실행했을 때:
 
-- `Tests run: 376`
+- `Tests run: 387`
 - `Tests failed: 0`
 
 테스트 설계와 남은 보강 항목은 [테스트 계획서](docs/week8-test-plan.md)에 정리했습니다.

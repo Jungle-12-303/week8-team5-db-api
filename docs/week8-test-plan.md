@@ -207,7 +207,10 @@ build/bin/sqlapi_server
 - `Content-Length` 비정상 값 시 `400 INVALID_CONTENT_LENGTH`: `완료`
 - body 길이와 `Content-Length` 불일치 시 `400 INVALID_CONTENT_LENGTH`: `완료`
 - request body 제한 초과 시 `413 PAYLOAD_TOO_LARGE`: `완료`
+- request body가 정확히 제한값 `16 KiB`일 때 허용: `완료`
 - request line + header 제한 초과 시 `431 HEADER_TOO_LARGE`: `완료`
+- request line + header가 정확히 제한값 `8 KiB`일 때 허용: `완료`
+- folded header 거부: `완료`
 - `Transfer-Encoding: chunked` 사용 시 `501 CHUNKED_NOT_SUPPORTED`: `완료`
 - 존재하지 않는 경로 `404 NOT_FOUND`: `완료`
 - 존재하는 경로의 잘못된 메서드 `405 METHOD_NOT_ALLOWED`: `완료`
@@ -221,14 +224,17 @@ build/bin/sqlapi_server
 - 잘못된 SQL 인자 시 `400 INVALID_SQL_ARGUMENT`: `완료`
 - lexer 실패 시 `400 SQL_LEX_ERROR`: `완료`
 - multi-statement 거부: `완료`
+- 공백만 있는 SQL 거부: `완료`
+- SQL 길이가 정확히 제한값 `8 KiB`일 때 허용: `완료`
+- SQL 길이 제한 초과 시 `413 PAYLOAD_TOO_LARGE`: `완료`
 
 ### 6.4 엔진/스토리지 오류 매핑
 
 - 스키마 로딩 실패 시 `500 SCHEMA_LOAD_ERROR`: `완료`
 - CSV 파일 I/O 실패 시 `500 STORAGE_IO_ERROR`: `완료`
-- 인덱스 rebuild 실패 시 `500 INDEX_REBUILD_ERROR`: `추가 필요`
-- 분류되지 않은 executor 실패 시 `500 ENGINE_EXECUTION_ERROR`: `추가 필요`
-- 분류되지 않은 내부 오류 시 `500 INTERNAL_ERROR`: `추가 필요`
+- 인덱스 rebuild 실패 시 `500 INDEX_REBUILD_ERROR`: `완료`
+- 분류되지 않은 executor 실패 시 `500 ENGINE_EXECUTION_ERROR`: `완료`
+- 분류되지 않은 내부 오류 시 `500 INTERNAL_ERROR`: `완료`
 
 ### 6.5 서버 시작/종료 및 환경 검증
 
@@ -237,17 +243,18 @@ build/bin/sqlapi_server
 - `--queue-capacity >= 1` 검증: `완료`
 - 존재하지 않는 `--schema-dir` 거부: `완료`
 - 존재하지 않는 `--data-dir` 거부: `완료`
-- 종료 경로에서 accept thread / worker 정리: `추가 필요`
+- 종료 경로에서 accept thread / worker 정리: `완료`
 
 ### 6.6 병렬성 및 동시성 검증
 
-- 다중 동시 요청 처리: `추가 필요`
-- 같은 테이블 동시 접근 직렬화: `추가 필요`
-- 다른 테이블 요청 병렬 처리: `추가 필요`
+- 다중 동시 요청 처리: `완료`
+- 같은 테이블 동시 접근 직렬화: `완료`
+- 다른 테이블 요청 병렬 처리: `완료`
 - queue full 시 `503 QUEUE_FULL`: `완료`
-- race condition / deadlock / unlock 누락 점검: `추가 필요`
-- 재시작 후 데이터 조회 가능 여부: `추가 필요`
-- 인덱스 기반 조회 경로 유지: `추가 필요`
+- race condition / deadlock / unlock 누락 점검: `완료`
+- 재시작 후 데이터 조회 가능 여부: `완료`
+- 인덱스 기반 조회 경로 유지: `완료`
+- alias 이름과 storage 이름 락 정규화: `완료`
 
 ## 7. 현재 자동 테스트 반영 전략
 
@@ -257,17 +264,19 @@ build/bin/sqlapi_server
 - 루트 HTML 페이지 노출
 - `POST /query` 정상 요청
 - `POST /query` 응답 `output`의 LF 줄바꿈 유지
-- 헤더, body, JSON, 경로, 메서드 관련 대표 오류 코드
-- 대표 SQL 오류 매핑
-- 대표 스토리지 I/O 오류 매핑
+- 헤더, body, JSON, 경로, 메서드 관련 오류 코드와 정확한 경계값 통과/초과
+- 대표 SQL 오류 매핑과 공백 SQL, SQL 길이 한계 검증
+- `SCHEMA_LOAD_ERROR`, `STORAGE_IO_ERROR`, `INDEX_REBUILD_ERROR`, `ENGINE_EXECUTION_ERROR`, `INTERNAL_ERROR`
 - 시작 옵션/데이터 경로 검증
 - queue full 시 `503 QUEUE_FULL`
+- 같은 테이블 직렬화, 다른 테이블 병렬 처리, alias lock 정규화
+- graceful shutdown drain과 종료 후 신규 연결 거부
+- 재시작 후 조회 복구와 인덱스 기반 `WHERE id = ...` 경로 유지
 
-향후 별도 테스트 파일 또는 보조 스레드/프로세스 fixture가 필요한 항목은 다음과 같다.
+아직 별도 프로세스 fixture로 보강할 수 있는 항목은 다음과 같다.
 
-- 병렬 요청 및 락 직렬화 검증
-- 시작 옵션 실패를 별도 프로세스로 검증하는 테스트
-- 재시작/복구성 중심 시나리오
+- 운영 신호(SIGINT/SIGTERM)를 사용하는 프로세스 단위 shutdown 검증
+- 더 큰 부하에서의 장시간 soak test와 통계 기반 race 탐지
 - graceful shutdown drain 보장 검증
 
 ## 8. 테스트 코드 관리 원칙

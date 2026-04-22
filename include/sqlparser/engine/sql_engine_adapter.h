@@ -53,4 +53,13 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
 void sql_engine_adapter_result_free(SqlEngineAdapterResult *result);
 const char *sql_engine_error_code_name(SqlEngineErrorCode code);
 
+/* 테스트용: 다음 실행 한 번에 강제로 특정 오류를 반환한다. */
+void sql_engine_adapter_test_force_next_error(SqlEngineErrorCode code);
+
+/* 테스트용: 테이블 락을 잡은 직후 인위적으로 지연을 삽입한다. */
+void sql_engine_adapter_test_set_delay_after_lock_ms(int delay_ms);
+
+/* 테스트용 hook 상태를 초기화한다. */
+void sql_engine_adapter_test_clear_hooks(void);
+
 #endif

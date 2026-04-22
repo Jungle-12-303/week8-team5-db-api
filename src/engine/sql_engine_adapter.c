@@ -11,6 +11,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+static pthread_mutex_t test_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
+static SqlEngineErrorCode forced_next_error = SQL_ENGINE_ERROR_NONE;
+static int delay_after_lock_ms = 0;
 
 static const char *statement_type_name(StatementType type) {
     if (type == STATEMENT_INSERT) {
@@ -43,6 +54,52 @@ static int is_blank_sql(const char *sql) {
     }
 
     return 1;
+}
+
+static void sleep_for_test_delay(int delay_ms) {
+    if (delay_ms <= 0) {
+        return;
+    }
+
+#ifdef _WIN32
+    Sleep((DWORD)delay_ms);
+#else
+    usleep((useconds_t)delay_ms * 1000U);
+#endif
+}
+
+static SqlEngineErrorCode consume_forced_next_error(void) {
+    SqlEngineErrorCode code;
+
+    pthread_mutex_lock(&test_hook_mutex);
+    code = forced_next_error;
+    forced_next_error = SQL_ENGINE_ERROR_NONE;
+    pthread_mutex_unlock(&test_hook_mutex);
+    return code;
+}
+
+static int current_delay_after_lock_ms(void) {
+    int delay_ms;
+
+    pthread_mutex_lock(&test_hook_mutex);
+    delay_ms = delay_after_lock_ms;
+    pthread_mutex_unlock(&test_hook_mutex);
+    return delay_ms;
+}
+
+static const char *forced_error_message(SqlEngineErrorCode code) {
+    switch (code) {
+        case SQL_ENGINE_ERROR_ENGINE_EXECUTION_ERROR:
+            return "forced engine execution failure";
+        case SQL_ENGINE_ERROR_INTERNAL_ERROR:
+            return "forced internal adapter failure";
+        case SQL_ENGINE_ERROR_INDEX_REBUILD_ERROR:
+            return "forced index rebuild failure";
+        case SQL_ENGINE_ERROR_SCHEMA_LOAD_ERROR:
+            return "forced schema load failure";
+        default:
+            return "forced adapter failure";
+    }
 }
 
 static char *read_stream_to_string(FILE *stream, char *error, size_t error_size) {
@@ -202,6 +259,16 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
     }
     lock_acquired = 1;
 
+    sleep_for_test_delay(current_delay_after_lock_ms());
+
+    {
+        SqlEngineErrorCode forced_error = consume_forced_next_error();
+        if (forced_error != SQL_ENGINE_ERROR_NONE) {
+            set_error(result, forced_error, forced_error_message(forced_error));
+            goto cleanup;
+        }
+    }
+
     output_stream = tmpfile();
     if (output_stream == NULL) {
         set_error(result, SQL_ENGINE_ERROR_INTERNAL_ERROR, "failed to create SQL output buffer");
@@ -257,6 +324,25 @@ cleanup:
 void sql_engine_adapter_result_free(SqlEngineAdapterResult *result) {
     free(result->output);
     result->output = NULL;
+}
+
+void sql_engine_adapter_test_force_next_error(SqlEngineErrorCode code) {
+    pthread_mutex_lock(&test_hook_mutex);
+    forced_next_error = code;
+    pthread_mutex_unlock(&test_hook_mutex);
+}
+
+void sql_engine_adapter_test_set_delay_after_lock_ms(int delay_ms) {
+    pthread_mutex_lock(&test_hook_mutex);
+    delay_after_lock_ms = delay_ms < 0 ? 0 : delay_ms;
+    pthread_mutex_unlock(&test_hook_mutex);
+}
+
+void sql_engine_adapter_test_clear_hooks(void) {
+    pthread_mutex_lock(&test_hook_mutex);
+    forced_next_error = SQL_ENGINE_ERROR_NONE;
+    delay_after_lock_ms = 0;
+    pthread_mutex_unlock(&test_hook_mutex);
 }
 
 const char *sql_engine_error_code_name(SqlEngineErrorCode code) {
