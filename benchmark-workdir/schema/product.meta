@@ -1,0 +1,2 @@
+table=product
+columns=prod_name,price,stock_quantity
