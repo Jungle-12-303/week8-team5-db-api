@@ -1,9 +1,17 @@
+/*
+ * server/worker_pool.c
+ *
+ * 요청 처리용 worker thread 묶음을 생성하고 join/destroy하는 작은 헬퍼다.
+ * worker 본체 로직은 server.c에서 넘겨준 routine이 담당하고,
+ * 이 파일은 스레드 배열의 생명주기만 관리한다.
+ */
 #include "sqlparser/server/worker_pool.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* worker_count만큼 스레드를 만들고, 중간 실패 시 이미 만든 스레드는 join한다. */
 int server_worker_pool_start(ServerWorkerPool *pool,
                              int worker_count,
                              ServerWorkerRoutine routine,
@@ -32,6 +40,7 @@ int server_worker_pool_start(ServerWorkerPool *pool,
     return 1;
 }
 
+/* 시작된 worker들을 순서대로 join한다. */
 void server_worker_pool_join(ServerWorkerPool *pool) {
     int index;
 
@@ -40,6 +49,7 @@ void server_worker_pool_join(ServerWorkerPool *pool) {
     }
 }
 
+/* thread handle 배열만 해제한다. 실제 종료 대기는 join 단계에서 끝난다. */
 void server_worker_pool_destroy(ServerWorkerPool *pool) {
     free(pool->threads);
     pool->threads = NULL;

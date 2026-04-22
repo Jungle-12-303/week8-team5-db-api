@@ -1,3 +1,11 @@
+/*
+ * http/http_response.c
+ *
+ * HTTP JSON 응답 조립과 전송을 담당한다.
+ *
+ * 최근 추가된 sql_platform_send_socket()을 통해 응답 전송 시
+ * 클라이언트 조기 종료로 인한 SIGPIPE가 프로세스 전체를 죽이지 않도록 한다.
+ */
 #include "sqlparser/http/http_response.h"
 
 #include "sqlparser/common/util.h"
@@ -6,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 헤더와 body를 부분 전송 없이 끝까지 쓰기 위한 작은 루프다. */
 static int send_all(sql_socket_t socket_fd, const char *buffer, size_t length) {
     size_t offset = 0;
 
@@ -21,10 +30,12 @@ static int send_all(sql_socket_t socket_fd, const char *buffer, size_t length) {
     return 1;
 }
 
+/* 응답 구조체를 초기 상태로 만든다. */
 void http_response_init(HttpResponse *response) {
     memset(response, 0, sizeof(*response));
 }
 
+/* body 버퍼를 해제하고 재사용 가능한 상태로 되돌린다. */
 void http_response_free(HttpResponse *response) {
     free(response->body);
     memset(response, 0, sizeof(*response));
@@ -47,6 +58,7 @@ const char *http_reason_phrase(int status_code) {
     return "Internal Server Error";
 }
 
+/* 엔진 오류 코드 집합을 외부 HTTP 상태 코드로 매핑한다. */
 int http_status_from_engine_error(SqlEngineErrorCode code) {
     switch (code) {
         case SQL_ENGINE_ERROR_INVALID_JSON:
@@ -84,6 +96,7 @@ int http_status_from_engine_error(SqlEngineErrorCode code) {
     return 500;
 }
 
+/* JSON 문자열 값 위치에 넣기 위해 제어문자와 따옴표를 이스케이프한다. */
 char *http_json_escape(const char *value) {
     size_t length = 0;
     char *escaped;
@@ -142,6 +155,7 @@ char *http_json_escape(const char *value) {
     return escaped;
 }
 
+/* JSON body와 상태 코드를 응답 구조체에 저장한다. */
 int http_response_set_json(HttpResponse *response, int status_code, const char *json_body) {
     response->status_code = status_code;
     response->body = copy_string(json_body);
@@ -152,6 +166,7 @@ int http_response_set_json(HttpResponse *response, int status_code, const char *
     return 1;
 }
 
+/* 엔진 오류를 표준 JSON 오류 응답 형태로 감싼다. */
 int http_response_set_error(HttpResponse *response, SqlEngineErrorCode code, const char *message) {
     char *escaped_message = http_json_escape(message);
     char body[1024];
@@ -175,6 +190,7 @@ int http_response_set_error(HttpResponse *response, SqlEngineErrorCode code, con
     return http_response_set_json(response, status_code, body);
 }
 
+/* 상태줄, 공통 헤더, JSON body를 하나의 HTTP/1.1 응답으로 보낸다. */
 int http_response_send(sql_socket_t socket_fd, const HttpResponse *response) {
     char header[256];
     int written = snprintf(header,
