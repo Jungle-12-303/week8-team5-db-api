@@ -4,7 +4,7 @@
 
 이 문서는 이 프로젝트에 들어 있는 `Makefile`이 무엇인지 설명하고, 실제로 어떻게 사용하는지 초심자 기준으로 정리한 학습용 문서입니다.
 
-설명 대상은 루트 경로의 [Makefile](/C:/developer_folder/jungle-sql-processor-2nd/Makefile)이며, 현재 프로젝트의 빌드 방식은 이 파일을 기준으로 이해하는 것이 가장 좋습니다.
+설명 대상은 저장소 루트의 `Makefile`이며, 현재 프로젝트의 빌드 방식은 이 파일을 기준으로 이해하는 것이 가장 좋습니다.
 
 ## 2. Makefile이란 무엇인가
 
@@ -57,7 +57,7 @@ make benchmark
 
 ## 4. 현재 프로젝트 Makefile의 핵심 구조
 
-현재 [Makefile](/C:/developer_folder/jungle-sql-processor-2nd/Makefile)은 크게 아래 요소로 이루어져 있습니다.
+현재 저장소 루트의 `Makefile`은 크게 아래 요소로 이루어져 있습니다.
 
 ### 4.1 변수
 

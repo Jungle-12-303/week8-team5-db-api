@@ -38,43 +38,43 @@
 
 처음 코드를 읽을 때는 아래 순서가 가장 쉽습니다.
 
-1. [src/app/main.c](/C:/developer_folder/jungle-sql-processor-2nd/src/app/main.c)
-2. [src/sql/lexer.c](/C:/developer_folder/jungle-sql-processor-2nd/src/sql/lexer.c)
-3. [src/sql/parser.c](/C:/developer_folder/jungle-sql-processor-2nd/src/sql/parser.c)
-4. [src/execution/executor.c](/C:/developer_folder/jungle-sql-processor-2nd/src/execution/executor.c)
-5. [src/storage/schema.c](/C:/developer_folder/jungle-sql-processor-2nd/src/storage/schema.c)
-6. [src/storage/storage.c](/C:/developer_folder/jungle-sql-processor-2nd/src/storage/storage.c)
-7. [src/index/table_index.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/table_index.c)
-8. [src/index/bptree.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/bptree.c)
-9. [src/benchmark/benchmark_main.c](/C:/developer_folder/jungle-sql-processor-2nd/src/benchmark/benchmark_main.c)
+1. `src/app/main.c`
+2. `src/sql/lexer.c`
+3. `src/sql/parser.c`
+4. `src/execution/executor.c`
+5. `src/storage/schema.c`
+6. `src/storage/storage.c`
+7. `src/index/table_index.c`
+8. `src/index/bptree.c`
+9. `src/benchmark/benchmark_main.c`
 
 이 순서대로 보면 "입력 -> 해석 -> 실행 -> 저장 -> 인덱스 -> 성능 측정" 흐름이 자연스럽게 이어집니다.
 
 ## 4. 폴더 구조 한눈에 보기
 
-- [src/app](/C:/developer_folder/jungle-sql-processor-2nd/src/app)
+- `src/app`
   프로그램 시작점이 있습니다.
-- [src/sql](/C:/developer_folder/jungle-sql-processor-2nd/src/sql)
+- `src/sql`
   SQL 문장을 읽고 해석하는 코드가 있습니다.
-- [src/execution](/C:/developer_folder/jungle-sql-processor-2nd/src/execution)
+- `src/execution`
   해석된 SQL을 실제 동작으로 바꾸는 코드가 있습니다.
-- [src/storage](/C:/developer_folder/jungle-sql-processor-2nd/src/storage)
+- `src/storage`
   스키마와 CSV 파일을 읽고 쓰는 코드가 있습니다.
-- [src/index](/C:/developer_folder/jungle-sql-processor-2nd/src/index)
+- `src/index`
   B+ 트리와 테이블별 인덱스 관리 코드가 있습니다.
-- [src/benchmark](/C:/developer_folder/jungle-sql-processor-2nd/src/benchmark)
+- `src/benchmark`
   대량 삽입과 성능 비교를 위한 실행 파일이 있습니다.
-- [src/common](/C:/developer_folder/jungle-sql-processor-2nd/src/common)
+- `src/common`
   문자열, 파일, 리스트 같은 공용 도구 함수가 있습니다.
-- [include/sqlparser](/C:/developer_folder/jungle-sql-processor-2nd/include/sqlparser)
+- `include/sqlparser`
   `.h` 헤더 파일이 모여 있습니다.
-- [schema](/C:/developer_folder/jungle-sql-processor-2nd/schema)
+- `schema`
   테이블 구조 정보가 있습니다.
-- [data](/C:/developer_folder/jungle-sql-processor-2nd/data)
+- `data`
   실제 데이터가 CSV 형태로 저장됩니다.
-- [benchmark-workdir](/C:/developer_folder/jungle-sql-processor-2nd/benchmark-workdir)
+- `benchmark-workdir`
   대량 테스트 전용 스키마와 CSV 샘플이 있습니다.
-- [tests](/C:/developer_folder/jungle-sql-processor-2nd/tests)
+- `tests`
   테스트 코드가 있습니다.
 
 ## 5. 핵심 용어를 아주 쉽게 설명하면
@@ -100,7 +100,7 @@
 
 ### 6-1. 시작점
 
-[src/app/main.c](/C:/developer_folder/jungle-sql-processor-2nd/src/app/main.c)가 프로그램의 시작점입니다.
+`src/app/main.c`가 프로그램의 시작점입니다.
 
 이 파일은 아래 일을 합니다.
 
@@ -115,7 +115,7 @@
 
 ### 6-2. SQL을 조각내기
 
-[src/sql/lexer.c](/C:/developer_folder/jungle-sql-processor-2nd/src/sql/lexer.c)는 SQL 문장을 토큰으로 나눕니다.
+`src/sql/lexer.c`는 SQL 문장을 토큰으로 나눕니다.
 
 예를 들어 아래 SQL이 있으면:
 
@@ -139,7 +139,7 @@ SELECT name, age FROM student WHERE id = 10;
 
 ### 6-3. SQL을 이해하기
 
-[src/sql/parser.c](/C:/developer_folder/jungle-sql-processor-2nd/src/sql/parser.c)는 토큰 목록을 보고 문장을 해석합니다.
+`src/sql/parser.c`는 토큰 목록을 보고 문장을 해석합니다.
 
 예를 들어:
 
@@ -155,11 +155,11 @@ VALUES ('컴퓨터공학과', '2024001', '김민수', 20);
 - 컬럼 목록: `department`, `student_number`, `name`, `age`
 - 값 목록: `'컴퓨터공학과'`, `'2024001'`, `'김민수'`, `20`
 
-이 정보를 담는 구조체 정의는 [include/sqlparser/sql/ast.h](/C:/developer_folder/jungle-sql-processor-2nd/include/sqlparser/sql/ast.h)에 있습니다.
+이 정보를 담는 구조체 정의는 `include/sqlparser/sql/ast.h`에 있습니다.
 
 ### 6-4. 실제 동작 수행하기
 
-[src/execution/executor.c](/C:/developer_folder/jungle-sql-processor-2nd/src/execution/executor.c)는 parser가 만든 결과를 실제 동작으로 바꿉니다.
+`src/execution/executor.c`는 parser가 만든 결과를 실제 동작으로 바꿉니다.
 
 여기서 7주차 핵심 로직이 많이 들어갑니다.
 
@@ -173,12 +173,12 @@ VALUES ('컴퓨터공학과', '2024001', '김민수', 20);
 
 ### 6-5. 스키마와 CSV 다루기
 
-[src/storage/schema.c](/C:/developer_folder/jungle-sql-processor-2nd/src/storage/schema.c)는 테이블 구조가 맞는지 확인합니다.
+`src/storage/schema.c`는 테이블 구조가 맞는지 확인합니다.
 
 예를 들어 `student` 테이블이라면 아래 두 파일을 함께 봅니다.
 
-- [schema/student.meta](/C:/developer_folder/jungle-sql-processor-2nd/schema/student.meta)
-- [data/student.csv](/C:/developer_folder/jungle-sql-processor-2nd/data/student.csv)
+- `schema/student.meta`
+- `data/student.csv`
 
 여기서 확인하는 것은 주로 아래 내용입니다.
 
@@ -187,13 +187,13 @@ VALUES ('컴퓨터공학과', '2024001', '김민수', 20);
 - 컬럼 목록이 있는가
 - CSV 헤더와 스키마 컬럼 순서가 같은가
 
-[src/storage/storage.c](/C:/developer_folder/jungle-sql-processor-2nd/src/storage/storage.c)는 실제 CSV 한 줄을 읽고, 나누고, 추가하는 일을 맡습니다.
+`src/storage/storage.c`는 실제 CSV 한 줄을 읽고, 나누고, 추가하는 일을 맡습니다.
 
 또한 7주차에서는 특정 오프셋의 행만 직접 읽는 기능도 맡습니다.
 
 ### 6-6. 인덱스는 어디서 관리하나
 
-[src/index/table_index.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/table_index.c)는 테이블별 인덱스를 관리합니다.
+`src/index/table_index.c`는 테이블별 인덱스를 관리합니다.
 
 이 파일의 핵심 역할은 아래와 같습니다.
 
@@ -202,7 +202,7 @@ VALUES ('컴퓨터공학과', '2024001', '김민수', 20);
 - 새 `id`와 행 위치를 인덱스에 등록
 - 중복 `id`, 누락된 `id`, 잘못된 `id`를 오류로 처리
 
-[src/index/bptree.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/bptree.c)는 실제 B+ 트리 자료구조 자체를 담당합니다.
+`src/index/bptree.c`는 실제 B+ 트리 자료구조 자체를 담당합니다.
 
 쉽게 말하면:
 
@@ -213,7 +213,7 @@ VALUES ('컴퓨터공학과', '2024001', '김민수', 20);
 
 ### 6-7. 벤치마크는 어디서 보나
 
-[src/benchmark/benchmark_main.c](/C:/developer_folder/jungle-sql-processor-2nd/src/benchmark/benchmark_main.c)는 대량 성능 측정용 별도 실행 파일입니다.
+`src/benchmark/benchmark_main.c`는 대량 성능 측정용 별도 실행 파일입니다.
 
 이 파일은 아래 일을 합니다.
 
@@ -317,17 +317,17 @@ make benchmark
 
 처음 디버깅할 때는 아래 위치가 이해하기 좋습니다.
 
-- [src/app/main.c](/C:/developer_folder/jungle-sql-processor-2nd/src/app/main.c)
+- `src/app/main.c`
   입력 방식 분기와 `run_sql_text`
-- [src/sql/parser.c](/C:/developer_folder/jungle-sql-processor-2nd/src/sql/parser.c)
+- `src/sql/parser.c`
   `INSERT` 와 `SELECT` 를 구분하는 부분
-- [src/execution/executor.c](/C:/developer_folder/jungle-sql-processor-2nd/src/execution/executor.c)
+- `src/execution/executor.c`
   `execute_insert`, `execute_select`
-- [src/index/table_index.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/table_index.c)
+- `src/index/table_index.c`
   인덱스 재구성과 등록
-- [src/index/bptree.c](/C:/developer_folder/jungle-sql-processor-2nd/src/index/bptree.c)
+- `src/index/bptree.c`
   키 삽입과 검색
-- [src/storage/storage.c](/C:/developer_folder/jungle-sql-processor-2nd/src/storage/storage.c)
+- `src/storage/storage.c`
   CSV append와 오프셋 기반 행 읽기
 
 ## 12. 마지막으로 한 문장 정리
