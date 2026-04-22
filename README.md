@@ -68,74 +68,13 @@ client
 
 ### 4.1 정상 요청 흐름
 
-```text
-[Client]
-   |
-   v
-[Listen Socket]
-   |
-   v
-[Accept Thread]
-   |
-   +--> queue full ? -- yes --> [503 QUEUE_FULL 응답 후 연결 종료]
-   |
-   no
-   |
-   v
-[Bounded Task Queue]
-   |
-   v
-[Worker Thread]
-   |
-   v
-[HTTP Request Parser]
-   |
-   +--> malformed / limit exceeded ? -- yes --> [HTTP 오류 응답 전송]
-   |
-   no
-   |
-   v
-[Router]
-   |
-   +--> GET /health -----> [Health Handler] -----> [JSON 응답]
-   |
-   +--> POST /query
-           |
-           v
-      [Query Handler]
-           |
-           v
-      [DbService]
-           |
-           v
-      [SqlEngineAdapter]
-           |
-           +--> lex / parse
-           +--> load_schema()
-           +--> lock(storage_name)
-           +--> execute_statement()
-           +--> capture output
-           +--> unlock
-           |
-           v
-      [HTTP JSON Response]
-           |
-           v
-      [Socket Write + Close]
-```
+![정상 요청 흐름 다이어그램](docs/images/api-server-request-flow.png)
+
+정상 요청은 `accept thread -> task queue -> worker thread -> http/api/service/engine` 순서로 내려가고, `POST /query`는 엔진 어댑터 안에서 schema 로딩, 락 획득, SQL 실행, JSON 응답 생성까지 이어집니다. HTTP 형식 오류나 queue full 같은 예외는 가능한 한 앞단에서 바로 끊어 응답합니다.
 
 ### 4.2 동시성 제어가 걸리는 지점
 
-```text
-accept thread
-  -> bounded queue
-  -> worker
-  -> engine adapter
-  -> load_schema()로 schema.storage_name 결정
-  -> lock manager가 storage_name 기준 exclusive lock 획득
-  -> executor / storage / index 접근
-  -> lock 해제
-```
+![런타임 동시성 구조 다이어그램](docs/images/api-server-runtime-flow.png)
 
 핵심은 SQL 원문에 적힌 테이블명이 아니라 `load_schema()` 이후 확정되는 `schema.storage_name`을 락 키로 쓴다는 점입니다. 따라서 alias 이름으로 같은 물리 파일을 가리켜도 동일한 락으로 직렬화됩니다.
 
