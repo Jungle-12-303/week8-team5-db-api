@@ -10,7 +10,7 @@ static int send_all(sql_socket_t socket_fd, const char *buffer, size_t length) {
     size_t offset = 0;
 
     while (offset < length) {
-        int sent = send(socket_fd, buffer + offset, (int)(length - offset), 0);
+        int sent = sql_platform_send_socket(socket_fd, buffer + offset, length - offset);
         if (sent <= 0) {
             return 0;
         }

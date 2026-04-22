@@ -19,6 +19,7 @@ int sql_platform_network_init(char *error, size_t error_size);
 void sql_platform_network_cleanup(void);
 int sql_platform_close_socket(sql_socket_t socket_fd);
 int sql_platform_shutdown_socket(sql_socket_t socket_fd);
+int sql_platform_send_socket(sql_socket_t socket_fd, const char *buffer, size_t length);
 void sql_platform_format_socket_error(char *error, size_t error_size, const char *action);
 
 #endif

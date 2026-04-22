@@ -209,6 +209,16 @@ static int expect_error_response(const char *response,
            expect_contains(response, error_code, code_name);
 }
 
+static int expect_true(int condition, const char *name) {
+    if (!condition) {
+        fprintf(stderr, "[FAIL] %s\n", name);
+        return 0;
+    }
+
+    printf("[PASS] %s\n", name);
+    return 1;
+}
+
 static int send_large_http_request(const char *host,
                                    int port,
                                    const char *request_prefix,
@@ -235,6 +245,184 @@ static int send_large_http_request(const char *host,
     ok = send_http_request(host, port, request, response, response_size);
     free(request);
     return ok;
+}
+
+static int open_blocking_request_connection(const char *host, int port, sql_socket_t *socket_out) {
+    const char *request =
+        "POST /query HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: 64\r\n"
+        "\r\n"
+        "{";
+
+    if (!connect_to_server(host, port, socket_out)) {
+        return 0;
+    }
+
+    if (!send_all(*socket_out, request, strlen(request))) {
+        sql_platform_close_socket(*socket_out);
+        *socket_out = SQL_INVALID_SOCKET;
+        return 0;
+    }
+
+    return 1;
+}
+
+static void drain_and_close_socket(sql_socket_t socket_fd) {
+    char buffer[256];
+
+    if (socket_fd == SQL_INVALID_SOCKET) {
+        return;
+    }
+
+    CLOSE_WRITE(socket_fd);
+    while (recv(socket_fd, buffer, (int)sizeof(buffer), 0) > 0) {
+    }
+    sql_platform_close_socket(socket_fd);
+}
+
+static int run_api_server_config_validation_tests(const char *schema_dir, const char *data_dir) {
+    SqlApiServerConfig config;
+    SqlApiServer *server = NULL;
+    char error[256];
+    char missing_path[256];
+    int failures = 0;
+
+    sqlapi_server_config_set_defaults(&config);
+    config.schema_dir = schema_dir;
+    config.data_dir = data_dir;
+
+    config.port = 0;
+    failures += !expect_true(!sqlapi_server_create(&server, &config, error, sizeof(error)),
+                             "API server rejects port 0");
+    failures += !expect_contains(error, "--port must be between 1 and 65535",
+                                 "API server reports invalid port range");
+
+    sqlapi_server_config_set_defaults(&config);
+    config.schema_dir = schema_dir;
+    config.data_dir = data_dir;
+    config.worker_count = 0;
+    failures += !expect_true(!sqlapi_server_create(&server, &config, error, sizeof(error)),
+                             "API server rejects worker-count below 1");
+    failures += !expect_contains(error, "--worker-count must be at least 1",
+                                 "API server reports invalid worker-count");
+
+    sqlapi_server_config_set_defaults(&config);
+    config.schema_dir = schema_dir;
+    config.data_dir = data_dir;
+    config.queue_capacity = 0;
+    failures += !expect_true(!sqlapi_server_create(&server, &config, error, sizeof(error)),
+                             "API server rejects queue-capacity below 1");
+    failures += !expect_contains(error, "--queue-capacity must be at least 1",
+                                 "API server reports invalid queue-capacity");
+
+    build_child_path(missing_path, sizeof(missing_path), schema_dir, "missing_schema_dir");
+    sqlapi_server_config_set_defaults(&config);
+    config.schema_dir = missing_path;
+    config.data_dir = data_dir;
+    failures += !expect_true(!sqlapi_server_create(&server, &config, error, sizeof(error)),
+                             "API server rejects missing schema directory");
+    failures += !expect_contains(error, "--schema-dir must point to an existing directory",
+                                 "API server reports missing schema directory");
+
+    build_child_path(missing_path, sizeof(missing_path), data_dir, "missing_data_dir");
+    sqlapi_server_config_set_defaults(&config);
+    config.schema_dir = schema_dir;
+    config.data_dir = missing_path;
+    failures += !expect_true(!sqlapi_server_create(&server, &config, error, sizeof(error)),
+                             "API server rejects missing data directory");
+    failures += !expect_contains(error, "--data-dir must point to an existing directory",
+                                 "API server reports missing data directory");
+
+    return failures;
+}
+
+static int run_api_server_queue_full_test(void) {
+    char root[160];
+    char schema_dir[192];
+    char data_dir[192];
+    char schema_path[224];
+    char data_path[224];
+    char response[8192];
+    char error[256];
+    SqlApiServerConfig config;
+    SqlApiServer *server = NULL;
+    sql_socket_t blocker_one = SQL_INVALID_SOCKET;
+    sql_socket_t blocker_two = SQL_INVALID_SOCKET;
+    int port = allocate_test_port();
+    int failures = 0;
+
+    if (port == 0) {
+        fprintf(stderr, "[FAIL] allocate queue full test port\n");
+        return 1;
+    }
+
+    if (!create_test_dirs(root, sizeof(root), schema_dir, sizeof(schema_dir), data_dir, sizeof(data_dir))) {
+        fprintf(stderr, "[FAIL] create queue full test directories\n");
+        return 1;
+    }
+
+    build_child_path(schema_path, sizeof(schema_path), schema_dir, "users.meta");
+    build_child_path(data_path, sizeof(data_path), data_dir, "users.csv");
+    if (!write_text_file(schema_path, "table=users\ncolumns=name,age\n") ||
+        !write_text_file(data_path, "name,age\nAlice,20\nBob,21\n")) {
+        fprintf(stderr, "[FAIL] write queue full test dataset\n");
+        return 1;
+    }
+
+    sqlapi_server_config_set_defaults(&config);
+    config.port = port;
+    config.worker_count = 1;
+    config.queue_capacity = 1;
+    config.schema_dir = schema_dir;
+    config.data_dir = data_dir;
+
+    if (!sqlapi_server_create(&server, &config, error, sizeof(error))) {
+        fprintf(stderr, "[FAIL] create queue full API server: %s\n", error);
+        return 1;
+    }
+
+    if (!sqlapi_server_start(server, error, sizeof(error))) {
+        fprintf(stderr, "[FAIL] start queue full API server: %s\n", error);
+        sqlapi_server_destroy(server);
+        return 1;
+    }
+
+    sleep_briefly();
+
+    failures += !expect_true(open_blocking_request_connection("127.0.0.1", port, &blocker_one),
+                             "queue full fixture opens first blocking connection");
+    sleep_briefly();
+    failures += !expect_true(open_blocking_request_connection("127.0.0.1", port, &blocker_two),
+                             "queue full fixture opens second blocking connection");
+    sleep_briefly();
+
+    failures += !expect_true(sqlapi_server_queue_depth(server) == 1,
+                             "queue full fixture fills one queued task");
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send queue full probe request\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 503 Service Unavailable",
+                                           "\"code\":\"QUEUE_FULL\"",
+                                           "API server queue full");
+    }
+
+    drain_and_close_socket(blocker_one);
+    drain_and_close_socket(blocker_two);
+
+    sleep_briefly();
+    sqlapi_server_request_shutdown(server);
+    sqlapi_server_wait(server);
+    sqlapi_server_destroy(server);
+    return failures == 0 ? 0 : 1;
 }
 
 int run_api_server_tests(void) {
@@ -265,6 +453,8 @@ int run_api_server_tests(void) {
         fprintf(stderr, "[FAIL] create API server test directories\n");
         return 1;
     }
+
+    failures += run_api_server_config_validation_tests(schema_dir, data_dir);
 
     build_child_path(schema_path, sizeof(schema_path), schema_dir, "users.meta");
     build_child_path(data_path, sizeof(data_path), data_dir, "users.csv");
@@ -684,5 +874,7 @@ int run_api_server_tests(void) {
     sqlapi_server_request_shutdown(server);
     sqlapi_server_wait(server);
     sqlapi_server_destroy(server);
+
+    failures += run_api_server_queue_full_test();
     return failures == 0 ? 0 : 1;
 }
