@@ -1,14 +1,23 @@
 /*
  * service/db_service.c
  *
- * API 계층과 엔진 어댑터 사이의 아주 얇은 서비스 레이어다.
+ * 이 파일은 API 계층과 엔진 어댑터 사이를 잇는 service 계층이다.
  *
- * 현재 최소 구현에서는 별도 정책 없이 어댑터 호출만 위임하지만,
- * 라우터/핸들러가 엔진 세부사항을 직접 알지 않게 하는 경계 역할을 유지한다.
+ * 현재 구현은 매우 얇지만, 구조적으로는 중요한 경계다.
+ *
+ * 이유:
+ * - API 핸들러가 engine adapter 구조체와 세부 설정을 직접 다루지 않게 한다.
+ * - 이후 공통 정책, 로깅, 권한 검사, 입력 보정 같은 로직을 넣을 자리를 남겨 둔다.
+ * - 문서에서 정의한 controller/api -> service -> engine 의 의존 방향을 유지한다.
  */
 #include "sqlparser/service/db_service.h"
 
-/* API 요청을 내부 SQL 실행 요청으로 넘기는 서비스 진입점이다. */
+/*
+ * API 계층이 받은 SQL 문자열을 내부 엔진 실행 요청으로 위임한다.
+ *
+ * 지금은 adapter_config를 그대로 넘기는 단순 위임이지만,
+ * "핸들러가 곧바로 엔진을 호출하지 않는다"는 구조적 의미가 더 중요하다.
+ */
 int db_service_execute_sql(DbService *service, const char *sql, SqlEngineAdapterResult *result) {
     return sql_engine_adapter_execute(&service->adapter_config, sql, result);
 }

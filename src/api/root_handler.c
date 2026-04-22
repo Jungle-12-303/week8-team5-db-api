@@ -1,7 +1,24 @@
+/*
+ * api/root_handler.c
+ *
+ * 이 파일은 GET / 요청에 대해 브라우저용 HTML 콘솔 페이지를 반환하는 핸들러다.
+ *
+ * 핵심 역할:
+ * - 간단한 SQL 입력 화면을 문자열 상수 HTML로 제공한다.
+ * - 브라우저에서 POST /query 를 바로 호출할 수 있게 한다.
+ * - 현재 worker 수와 queue 깊이를 초기 화면에 함께 노출한다.
+ *
+ * 이 계층은 "정적 HTML 응답 제공"만 담당하고,
+ * 실제 SQL 실행은 브라우저의 fetch('/query') 이후 query_handler가 맡는다.
+ */
 #include "sqlparser/api/root_handler.h"
 
 #include <stdio.h>
 
+/*
+ * 루트 페이지는 발표/시연용 브라우저 진입점이다.
+ * HTML/CSS/JS 전체를 하나의 문자열 상수로 만들어 즉시 내려준다.
+ */
 int api_handle_root(const HttpRequest *request, const ApiContext *context, HttpResponse *response) {
     static const char *page =
         "<!doctype html>\n"
@@ -329,12 +346,18 @@ int api_handle_root(const HttpRequest *request, const ApiContext *context, HttpR
     char body[16384];
     int written;
 
+    /* GET / 역시 body 없는 요청만 허용한다. */
     if (request->body_length > 0) {
         return http_response_set_error(response,
                                        SQL_ENGINE_ERROR_INVALID_JSON,
                                        "GET / must not include a request body");
     }
 
+    /*
+     * HTML 템플릿 안의 %d 자리에 현재 서버 상태를 주입한다.
+     * - worker_count
+     * - queue_depth
+     */
     written = snprintf(body,
                        sizeof(body),
                        page,
@@ -344,5 +367,6 @@ int api_handle_root(const HttpRequest *request, const ApiContext *context, HttpR
         return 0;
     }
 
+    /* 완성된 HTML을 text/html 응답으로 반환한다. */
     return http_response_set_html(response, 200, body);
 }

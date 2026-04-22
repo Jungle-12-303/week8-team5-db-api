@@ -86,7 +86,12 @@ static int directory_exists(const char *path) {
 #endif
 }
 
-/* 문서에 정의된 기본 서버 설정을 config 구조체에 채운다. */
+/*
+ * 문서에 정의된 기본 서버 설정을 config 구조체에 채운다.
+ *
+ * 사용자가 옵션을 생략하고 `./build/bin/sqlapi_server` 만 실행해도
+ * 이 기본값들로 서버가 뜰 수 있게 하는 함수다.
+ */
 void sqlapi_server_config_set_defaults(SqlApiServerConfig *config) {
     config->host = "127.0.0.1";
     config->port = 8080;
@@ -99,7 +104,12 @@ void sqlapi_server_config_set_defaults(SqlApiServerConfig *config) {
     config->header_limit = 8 * 1024;
 }
 
-/* listen 전에 범위 오류와 잘못된 데이터 경로를 조기에 걸러낸다. */
+/*
+ * listen 전에 설정값을 미리 검증한다.
+ *
+ * 소켓, 스레드, mutex를 만들기 전에 잘못된 입력을 걸러야
+ * 실패 원인이 더 명확하고 정리 경로도 단순해진다.
+ */
 int sqlapi_server_validate_config(const SqlApiServerConfig *config, char *error, size_t error_size) {
     /* 잘못된 포트 범위는 bind 이전에 명시적인 설정 오류로 반환한다. */
     if (config->port < 1 || config->port > 65535) {
@@ -129,7 +139,14 @@ int sqlapi_server_validate_config(const SqlApiServerConfig *config, char *error,
     return 1;
 }
 
-/* 요청 전체를 읽지 못한 경우에도 간단한 JSON 오류 응답은 직접 내려준다. */
+/*
+ * 요청 전체를 정상 파싱하지 못한 경우에도 최소한의 JSON 오류 응답은 직접 내려준다.
+ *
+ * 예:
+ * - header too large
+ * - invalid content length
+ * - chunked not supported
+ */
 static int send_simple_error(sql_socket_t socket_fd, SqlEngineErrorCode code, const char *message) {
     HttpResponse response;
     int ok;
@@ -178,6 +195,11 @@ static void handle_client_request(SqlApiServer *server, sql_socket_t client_sock
         return;
     }
 
+    /*
+     * API 계층으로 넘길 실행 문맥을 만든다.
+     * - db_service: 실제 SQL 실행 진입점
+     * - worker_count / queue_depth: /health, / 화면에서 보여줄 런타임 상태
+     */
     /* 라우터/핸들러가 헬스체크 응답에 넣을 현재 서버 상태를 context로 전달한다. */
     context.db_service = &server->db_service;
     context.worker_count = server->worker_count;
@@ -192,15 +214,22 @@ static void handle_client_request(SqlApiServer *server, sql_socket_t client_sock
                           SQL_ENGINE_ERROR_INTERNAL_ERROR,
                           "failed to construct HTTP response");
     } else {
+        /* 라우터가 만든 완성 응답을 그대로 클라이언트 소켓에 전송한다. */
         http_response_send(client_socket, &response);
     }
 
+    /* 1 connection = 1 request 이므로 응답 후 요청/응답 자원과 소켓을 모두 정리한다. */
     http_request_free(&request);
     http_response_free(&response);
     close_client_socket(client_socket);
 }
 
-/* worker thread는 queue가 닫힐 때까지 연결 단위 작업을 반복 처리한다. */
+/*
+ * worker thread 본체다.
+ *
+ * queue에서 연결 하나를 꺼내 처리하고,
+ * queue가 close되어 더 이상 pop할 작업이 없으면 루프를 끝낸다.
+ */
 static void *server_worker_main(void *context) {
     SqlApiServer *server = (SqlApiServer *)context;
     ServerTask task;
@@ -315,7 +344,13 @@ static int open_listen_socket(SqlApiServer *server, char *error, size_t error_si
     return 0;
 }
 
-/* 설정 복사, queue/lock/registry 초기화를 묶어 서버 런타임 객체를 생성한다. */
+/*
+ * 서버 런타임 객체를 생성한다.
+ *
+ * create 단계는 "시작 전 준비"만 담당한다.
+ * 즉 여기서는 설정 복사, mutex/queue/lock/registry 초기화까지만 하고,
+ * 실제 네트워크 바인드와 스레드 시작은 start 단계에서 수행한다.
+ */
 int sqlapi_server_create(SqlApiServer **out_server,
                          const SqlApiServerConfig *config,
                          char *error,
@@ -334,7 +369,10 @@ int sqlapi_server_create(SqlApiServer **out_server,
         return 0;
     }
 
-    /* 이후 런타임 동안 참조할 설정 문자열은 독립 소유권을 갖도록 복사한다. */
+    /*
+     * 이후 런타임 동안 config 원본보다 오래 살아야 할 수 있으므로,
+     * 설정 문자열은 서버 객체가 독립 소유하도록 복사한다.
+     */
     server->host = copy_string(config->host);
     server->schema_dir = copy_string(config->schema_dir);
     server->data_dir = copy_string(config->data_dir);
@@ -398,7 +436,10 @@ int sqlapi_server_create(SqlApiServer **out_server,
         return 0;
     }
 
-    /* service 계층은 이 adapter_config를 통해 schema/data/path/lock 설정을 공유한다. */
+    /*
+     * service 계층은 내부 adapter_config를 통해
+     * schema/data 경로, SQL 길이 제한, lock manager를 공유받는다.
+     */
     server->db_service.adapter_config.schema_dir = server->schema_dir;
     server->db_service.adapter_config.data_dir = server->data_dir;
     server->db_service.adapter_config.sql_length_limit = server->sql_length_limit;
@@ -408,7 +449,17 @@ int sqlapi_server_create(SqlApiServer **out_server,
     return 1;
 }
 
-/* 네트워크 초기화 후 listen socket, worker pool, accept thread를 순서대로 시작한다. */
+/*
+ * 실제 서버를 시작한다.
+ *
+ * 시작 순서가 중요하다:
+ * 1. 네트워크 스택 초기화
+ * 2. listen socket open
+ * 3. worker pool 시작
+ * 4. accept thread 시작
+ *
+ * worker가 먼저 떠 있어야 accept thread가 넣은 작업을 바로 소비할 수 있다.
+ */
 int sqlapi_server_start(SqlApiServer *server, char *error, size_t error_size) {
     /* Windows 환경에서는 listen 전에 네트워크 스택 초기화가 필요하다. */
     if (!sql_platform_network_init(error, error_size)) {
@@ -473,7 +524,12 @@ void sqlapi_server_request_shutdown(SqlApiServer *server) {
     pthread_mutex_unlock(&server->state_mutex);
 }
 
-/* 시작된 스레드들이 모두 정리될 때까지 join한다. */
+/*
+ * 시작된 스레드들이 모두 정리될 때까지 기다린다.
+ *
+ * request_shutdown이 "종료를 요청"하는 단계라면,
+ * wait는 실제 종료 완료를 기다리는 단계다.
+ */
 void sqlapi_server_wait(SqlApiServer *server) {
     if (!server->started) {
         /* start 이전에는 join할 스레드가 없으므로 바로 반환한다. */
@@ -485,7 +541,12 @@ void sqlapi_server_wait(SqlApiServer *server) {
     server_worker_pool_join(&server->worker_pool);
 }
 
-/* 서버 객체가 소유한 하위 모듈과 동적 메모리를 모두 해제한다. */
+/*
+ * 서버 객체가 소유한 하위 모듈과 동적 메모리를 모두 해제한다.
+ *
+ * destroy는 마지막 정리 단계이며,
+ * 네트워크/스레드/인덱스/락/큐/설정 문자열을 역순으로 반납한다.
+ */
 void sqlapi_server_destroy(SqlApiServer *server) {
     if (server == NULL) {
         return;
@@ -494,7 +555,10 @@ void sqlapi_server_destroy(SqlApiServer *server) {
     /* destroy는 안전하게 shutdown을 선행 호출해 미종료 스레드가 없게 만든다. */
     sqlapi_server_request_shutdown(server);
     if (server->started) {
-        /* thread handle 배열은 started 경로에서만 생성되므로 조건부로 정리한다. */
+        /*
+         * thread handle 배열은 started 경로에서만 생성된다.
+         * 실제 스레드 종료 대기는 wait 단계에서 끝났다고 가정한다.
+         */
         server_worker_pool_destroy(&server->worker_pool);
     }
     /* 전역 인덱스/락/큐/mutex를 역순으로 정리한 뒤 설정 문자열과 서버 본체를 해제한다. */

@@ -1,9 +1,13 @@
 /*
  * storage/storage.c
  *
- * 이 파일은 실제 CSV 읽기/쓰기 로직을 담당한다.
- * schema.c가 "이 테이블이 유효한가"를 확인한다면,
- * storage.c는 "실제 파일에 어떻게 저장하고 읽는가"를 담당한다고 보면 된다.
+ * 이 파일은 실제 CSV 파일 읽기/쓰기 로직을 담당한다.
+ *
+ * 역할 분리 관점에서 보면:
+ * - schema.c: 이 테이블 구조가 유효한가?
+ * - storage.c: 이 CSV 파일을 어떻게 읽고 쓰는가?
+ *
+ * 즉 storage.c 는 실제 파일 I/O와 CSV 직렬화에 집중하는 계층이다.
  */
 #include "sqlparser/storage/storage.h"
 
@@ -36,7 +40,11 @@ static int append_character(char **buffer, size_t *length, size_t *capacity, cha
     return 1;
 }
 
-/* data/<table>.csv 파일을 열고, 실패 시 표준화된 오류 메시지를 만든다. */
+/*
+ * data/<table>.csv 파일을 열고, 실패 시 표준화된 오류 메시지를 만든다.
+ *
+ * 여러 storage 함수가 같은 경로 규칙을 쓰므로 공통화했다.
+ */
 static FILE *open_table_file(const char *data_dir, const char *table_name, const char *mode, char *error, size_t error_size) {
     char *path = build_path(data_dir, table_name, ".csv");
     FILE *file;
@@ -164,7 +172,12 @@ int csv_parse_line(const char *line, StringList *fields, char *error, size_t err
     return 1;
 }
 
-/* 문자열 하나를 CSV 규칙에 맞는 필드 표현으로 바꾼다. */
+/*
+ * 문자열 하나를 CSV 규칙에 맞는 필드 표현으로 바꾼다.
+ *
+ * 쉼표, 큰따옴표, 개행이 들어 있으면 quoted field로 감싸고,
+ * 큰따옴표는 "" 형태로 escape한다.
+ */
 char *csv_escape_field(const char *value) {
     int needs_quotes = 0;
     size_t index;
@@ -310,7 +323,12 @@ StorageResult append_row_csv(const char *data_dir, const char *table_name, const
     return result;
 }
 
-/* 특정 바이트 오프셋에서 시작하는 CSV 행 하나만 읽어 오는 함수다. */
+/*
+ * 특정 바이트 오프셋에서 시작하는 CSV 행 하나만 읽어 온다.
+ *
+ * B+ 트리 인덱스가 "id -> 파일 오프셋"을 알고 있을 때 사용하는 경로다.
+ * 전체 CSV를 다시 스캔하지 않고 원하는 행으로 바로 점프할 수 있다.
+ */
 StorageReadResult read_row_at_offset_csv(const char *data_dir, const char *table_name, long row_offset) {
     StorageReadResult result = {0};
     FILE *file = open_table_file(data_dir, table_name, "rb", result.message, sizeof(result.message));
@@ -351,7 +369,11 @@ StorageReadResult read_row_at_offset_csv(const char *data_dir, const char *table
 
 /*
  * CSV 전체를 한 줄씩 순회하며 visitor 콜백을 호출한다.
- * 인덱스 재구성처럼 "모든 행을 다시 읽어야 하는 작업"에 사용된다.
+ *
+ * 사용 예:
+ * - 인덱스 재구성
+ * - 전체 행 스캔 기반 조회
+ * - 초기 로딩 시 모든 레코드 재해석
  */
 int scan_rows_csv(const char *data_dir, const char *table_name, StorageRowVisitor visitor, void *context, char *error, size_t error_size) {
     FILE *file = open_table_file(data_dir, table_name, "rb", error, error_size);

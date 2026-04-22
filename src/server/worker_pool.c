@@ -1,9 +1,10 @@
 /*
  * server/worker_pool.c
  *
- * 요청 처리용 worker thread 묶음을 생성하고 join/destroy하는 작은 헬퍼다.
- * worker 본체 로직은 server.c에서 넘겨준 routine이 담당하고,
- * 이 파일은 스레드 배열의 생명주기만 관리한다.
+ * 이 파일은 요청 처리용 worker thread 묶음의 생명주기를 관리하는 모듈이다.
+ *
+ * worker가 "무슨 일을 하는지"는 server.c에서 넘겨준 routine이 결정하고,
+ * 이 파일은 thread 배열을 만들고 기다리고 정리하는 책임만 가진다.
  */
 #include "sqlparser/server/worker_pool.h"
 
@@ -11,7 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* worker_count만큼 스레드를 만들고, 중간 실패 시 이미 만든 스레드는 join한다. */
+/*
+ * worker_count 개수만큼 worker thread를 시작한다.
+ *
+ * 중간에 하나라도 실패하면,
+ * 이미 만든 worker들만 join해서 반쯤 열린 상태가 남지 않게 정리한다.
+ */
 int server_worker_pool_start(ServerWorkerPool *pool,
                              int worker_count,
                              ServerWorkerRoutine routine,
@@ -31,6 +37,7 @@ int server_worker_pool_start(ServerWorkerPool *pool,
     for (index = 0; index < worker_count; index++) {
         if (pthread_create(&pool->threads[index], NULL, routine, context) != 0) {
             snprintf(error, error_size, "failed to create worker thread");
+            /* 실제로 생성 성공한 개수만 남겨 join 범위를 정확히 맞춘다. */
             pool->count = index;
             server_worker_pool_join(pool);
             return 0;
@@ -40,7 +47,12 @@ int server_worker_pool_start(ServerWorkerPool *pool,
     return 1;
 }
 
-/* 시작된 worker들을 순서대로 join한다. */
+/*
+ * 시작된 worker들이 모두 끝날 때까지 기다린다.
+ *
+ * join은 "스레드 종료 대기"이고,
+ * 메모리 해제는 destroy에서 따로 처리한다.
+ */
 void server_worker_pool_join(ServerWorkerPool *pool) {
     int index;
 
@@ -49,7 +61,7 @@ void server_worker_pool_join(ServerWorkerPool *pool) {
     }
 }
 
-/* thread handle 배열만 해제한다. 실제 종료 대기는 join 단계에서 끝난다. */
+/* thread handle 배열만 해제한다. 실제 종료 대기는 join 단계에서 이미 끝나 있어야 한다. */
 void server_worker_pool_destroy(ServerWorkerPool *pool) {
     free(pool->threads);
     pool->threads = NULL;

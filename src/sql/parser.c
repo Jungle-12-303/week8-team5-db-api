@@ -1,25 +1,24 @@
-// parser는 lexer가 만든 토큰 목록을 SQL 의미 구조로 해석한다.
 /*
  * sql/parser.c
  *
  * parser는 lexer가 만든 토큰 배열을 읽어 INSERT/SELECT AST 구조로 바꾼다.
- * 즉, "토큰이 어떤 SQL 문장을 의미하는가"를 해석하는 단계다.
+ *
+ * 역할:
+ * - 토큰이 문법상 올바른 순서인지 확인하고
+ * - 그 결과를 Statement AST 구조체로 정리한다.
+ *
+ * 현재 범위에서는 INSERT 와 SELECT 만 지원한다.
  */
 #include "sqlparser/sql/parser.h"
 
-// 에러 메시지 생성을 위해 포함한다.
 #include <stdio.h>
-// free 함수를 쓰기 위해 포함한다.
 #include <stdlib.h>
 #include <string.h>
 
-// 현재 어느 토큰을 보고 있는지 관리하기 위한 내부 상태 구조체다.
+/* 현재 어느 토큰을 보고 있는지 관리하기 위한 parser 내부 상태다. */
 typedef struct {
-    // 전체 토큰 배열을 가리킨다.
     const TokenArray *tokens;
-    // 지금 읽고 있는 토큰 위치다.
     int index;
-    // 에러 메시지를 채워 넣을 결과 구조체 주소다.
     ParseResult *result;
 } ParserState;
 
@@ -111,7 +110,12 @@ static int expect_type(ParserState *state, TokenType type, const char *message) 
     return 1;
 }
 
-/* 현재 토큰이 INSERT, SELECT, FROM 같은 특정 키워드인지 확인한다. */
+/*
+ * 현재 토큰이 INSERT, SELECT, FROM 같은 특정 키워드인지 확인한다.
+ *
+ * lexer는 키워드와 일반 식별자를 모두 TOKEN_IDENTIFIER 로 만들기 때문에,
+ * parser 단계에서 문자열 비교로 실제 키워드 여부를 구분한다.
+ */
 static int expect_keyword(ParserState *state, const char *keyword) {
     // 현재 토큰을 잠시 읽기 쉽게 꺼내 둔다.
     const Token *token = current_token(state);
@@ -247,7 +251,10 @@ static int parse_condition_value(ParserState *state, char **value) {
     return 1;
 }
 
-/* 현재 과제 범위에서는 WHERE 뒤에 조건을 하나만 둘 수 있다. */
+/*
+ * 현재 과제 범위에서는 WHERE 뒤에 조건을 하나만 둘 수 있다.
+ * 따라서 AND / OR 가 바로 이어지면 명시적으로 거부한다.
+ */
 static int reject_unsupported_where_connector(ParserState *state) {
     const Token *token = current_token(state);
 
@@ -267,7 +274,12 @@ static int reject_unsupported_where_connector(ParserState *state) {
              token->position);
     return 0;
 }
-/* INSERT 문장을 AST의 InsertStatement 형태로 채운다. */
+/*
+ * INSERT 문장을 AST의 InsertStatement 형태로 채운다.
+ *
+ * 문법:
+ * INSERT INTO table (col1, col2) VALUES (v1, v2)
+ */
 static int parse_insert(ParserState *state, Statement *statement) {
     // union 안의 INSERT 전용 영역을 읽기 쉽게 별칭으로 잡는다.
     InsertStatement *insert_statement = &statement->as.insert_statement;
@@ -317,7 +329,14 @@ static int parse_insert(ParserState *state, Statement *statement) {
     return 1;
 }
 
-/* SELECT 문장을 AST의 SelectStatement 형태로 채운다. */
+/*
+ * SELECT 문장을 AST의 SelectStatement 형태로 채운다.
+ *
+ * 지원 형태:
+ * - SELECT * FROM table;
+ * - SELECT col1, col2 FROM table;
+ * - SELECT ... FROM table WHERE column = value;
+ */
 static int parse_select(ParserState *state, Statement *statement) {
     // union 안의 SELECT 전용 영역을 읽기 쉽게 별칭으로 잡는다.
     SelectStatement *select_statement = &statement->as.select_statement;
@@ -369,7 +388,15 @@ static int parse_select(ParserState *state, Statement *statement) {
     return 1;
 }
 
-/* 토큰 배열 하나를 문장 하나로 완성하는 parser의 진입점이다. */
+/*
+ * 토큰 배열 하나를 문장 하나로 완성하는 parser 진입점이다.
+ *
+ * 큰 흐름:
+ * 1. 첫 키워드로 INSERT/SELECT 분기
+ * 2. 각 문법 함수(parse_insert / parse_select) 호출
+ * 3. 문장 끝 세미콜론 확인
+ * 4. EOF 확인
+ */
 ParseResult parse_statement(const TokenArray *tokens) {
     // 반환할 결과 구조체다. {0}으로 초기화해 ok=0, 포인터=NULL 상태로 시작한다.
     ParseResult result = {0};

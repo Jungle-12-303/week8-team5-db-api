@@ -1,28 +1,27 @@
-// schema.c는 meta 파일과 CSV 헤더를 읽어 테이블 구조를 검증한다.
 /*
  * storage/schema.c
  *
- * 이 파일은 schema/<table>.meta 와 data/<table>.csv를 읽어
- * "이 테이블이 정말 유효한가?"를 검증하는 역할을 담당한다.
+ * 이 파일은 schema/<table>.meta 와 data/<table>.csv 를 함께 읽어
+ * 테이블 정의가 실제 데이터 파일과 일치하는지 검증하는 모듈이다.
  *
- * 쉽게 말해:
- * - 테이블 정의 읽기
- * - 컬럼 목록 확인
- * - CSV 헤더와 스키마가 맞는지 검증
+ * 핵심 역할:
+ * - meta 파일에서 table=..., columns=... 선언을 읽는다.
+ * - 요청한 테이블 이름과 실제 meta 선언이 맞는지 확인한다.
+ * - CSV 헤더가 스키마 컬럼 수/순서와 일치하는지 검증한다.
+ *
+ * 즉 schema.c 는 "메타 파일 파싱"만 하는 코드가 아니라,
+ * 실행 전에 테이블 구조 일관성을 확인하는 방어선이다.
  */
 #include "sqlparser/storage/schema.h"
 
-// CSV 한 줄을 컬럼 목록으로 파싱하기 위해 사용한다.
+/* columns=... 과 CSV 헤더 파싱에 기존 CSV 파서를 재사용한다. */
 #include "sqlparser/storage/storage.h"
 
-// 스키마 디렉터리 안의 meta 파일을 탐색하기 위해 포함한다.
+/* schema 디렉터리 순회를 위해 사용한다. */
 #include <dirent.h>
 #include <errno.h>
-// 파일 읽기와 메시지 생성을 위해 포함한다.
 #include <stdio.h>
-// free 함수를 쓰기 위해 포함한다.
 #include <stdlib.h>
-// strcmp, strchr를 쓰기 위해 포함한다.
 #include <string.h>
 #include <sys/stat.h>
 
@@ -34,7 +33,12 @@ static void set_schema_error(SchemaResult *result, const char *message) {
     snprintf(result->message, sizeof(result->message), "%s", message);
 }
 
-/* meta 파일의 columns=... 값을 CSV 한 줄처럼 파싱해 컬럼 리스트로 만든다. */
+/*
+ * meta 파일의 columns=... 값을 CSV 한 줄처럼 파싱해 컬럼 리스트로 만든다.
+ *
+ * 예:
+ * columns=name,age,department
+ */
 static int parse_columns_value(const char *value, StringList *columns, char *message, size_t message_size) {
     // columns=id,name,age 값을 잠시 CSV처럼 파싱할 임시 리스트다.
     StringList parsed = {0};
@@ -111,7 +115,9 @@ static int has_meta_extension(const char *filename) {
 
 /*
  * 특정 meta 파일이 요청한 table=... 선언을 갖고 있는지 검사한다.
- * alias 파일명 지원을 위해 디렉터리 전체를 탐색할 때 사용된다.
+ *
+ * 기본 경로 schema_dir/table_name.meta 를 못 찾았을 때
+ * 디렉터리 전체를 순회하며 alias meta 파일도 찾을 수 있게 해 준다.
  */
 static int file_declares_table(const char *path, const char *table_name, int *matches, char *message, size_t message_size) {
     // meta 파일을 읽을 핸들이다.
@@ -312,7 +318,15 @@ static int validate_csv_header(const char *data_dir, const char *storage_name, c
 }
 
 /*
- * 테이블 하나의 schema를 로딩하고, 연결된 CSV까지 함께 검증하는 storage 진입점이다.
+ * 테이블 하나의 schema를 로딩하고, 연결된 CSV까지 함께 검증하는 진입점이다.
+ *
+ * 큰 흐름:
+ * 1. meta 파일 경로 찾기
+ * 2. meta 파일 파싱
+ * 3. 필수 필드(table, columns) 확인
+ * 4. 예약 컬럼(id) 금지 검사
+ * 5. 요청 이름과 실제 선언 이름 비교
+ * 6. CSV 헤더 일치 여부 검증
  */
 SchemaResult load_schema(const char *schema_dir, const char *data_dir, const char *table_name) {
     // 반환할 최종 결과 구조체다.
@@ -421,7 +435,10 @@ SchemaResult load_schema(const char *schema_dir, const char *data_dir, const cha
         return result;
     }
 
-    // SQL에서는 선언된 table 이름과 실제 파일 basename 둘 다 허용한다.
+    /*
+     * SQL에서는 선언된 table 이름과 실제 storage 파일 basename 둘 다 허용한다.
+     * 따라서 둘 중 어느 하나와 맞으면 같은 물리 테이블로 인정한다.
+     */
     if (strcmp(result.schema.table_name, table_name) != 0 &&
         strcmp(result.schema.storage_name, table_name) != 0) {
         free_schema(&result.schema);

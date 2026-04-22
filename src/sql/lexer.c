@@ -1,25 +1,30 @@
-// lexer는 SQL 원문을 토큰 목록으로 바꿔 주는 단계다.
 /*
  * sql/lexer.c
  *
  * lexer는 SQL 원문을 parser가 처리할 수 있는 토큰 배열로 바꾸는 단계다.
- * 글자 단위 입력을 의미 있는 조각(키워드, 식별자, 문자열, 기호)으로 분리한다고 이해하면 된다.
+ *
+ * 쉽게 말해:
+ * - 원시 문자열을
+ * - IDENTIFIER, STRING, NUMBER, COMMA 같은
+ * - 의미 있는 조각으로 분리한다.
+ *
+ * parser는 문자 하나하나를 직접 읽지 않고,
+ * lexer가 만든 토큰 배열만 보고 SQL 구조를 해석한다.
  */
 #include "sqlparser/sql/lexer.h"
 
-// 문자열 복사 같은 유틸 함수를 사용한다.
 #include "sqlparser/common/util.h"
 
-// 문자 종류 판별을 위해 포함한다.
 #include <ctype.h>
-// 에러 메시지 생성을 위해 포함한다.
 #include <stdio.h>
-// 동적 메모리 할당을 위해 포함한다.
 #include <stdlib.h>
-// memcpy를 쓰기 위해 포함한다.
 #include <string.h>
 
-/* 식별자의 첫 글자가 될 수 있는 문자인지 검사한다. */
+/*
+ * 식별자의 첫 글자가 될 수 있는 문자인지 검사한다.
+ *
+ * 현재 구현은 한글 같은 UTF-8 바이트도 식별자 시작으로 허용한다.
+ */
 static int is_identifier_start(unsigned char value) {
     // ASCII 영문, 언더스코어, 숫자 외에도 UTF-8 바이트를 식별자 시작으로 허용한다.
     return isalpha(value) || value == '_' || isdigit(value) || value >= 0x80;
@@ -118,7 +123,13 @@ static int lex_word(const char *input, int *index, TokenArray *tokens) {
     return ok;
 }
 
-/* 작은따옴표 문자열 리터럴을 읽어 TOKEN_STRING으로 만든다. */
+/*
+ * 작은따옴표 문자열 리터럴을 읽어 TOKEN_STRING으로 만든다.
+ *
+ * SQL 문자열 규칙:
+ * - 'Alice'
+ * - 'I''m student'  -> 내부의 ' 하나는 '' 로 표현
+ */
 static int lex_string(const char *input, int *index, TokenArray *tokens, char *error, size_t error_size) {
     // 문자열 리터럴이 시작된 원래 위치다.
     int start = *index;
@@ -201,7 +212,12 @@ static int lex_string(const char *input, int *index, TokenArray *tokens, char *e
     return 1;
 }
 
-/* SQL 원문 전체를 순회하며 토큰 배열을 완성하는 lexer 진입점이다. */
+/*
+ * SQL 원문 전체를 순회하며 토큰 배열을 완성하는 lexer 진입점이다.
+ *
+ * 이 단계는 문법 해석을 하지 않는다.
+ * 단지 "무슨 종류의 토큰들이 어떤 순서로 나왔는가"만 정리한다.
+ */
 int lex_sql(const char *input, TokenArray *tokens, char *error, size_t error_size) {
     // 원본 SQL 문자열을 왼쪽부터 훑어 갈 인덱스다.
     int index;
