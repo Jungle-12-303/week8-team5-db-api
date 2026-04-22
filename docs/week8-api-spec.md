@@ -13,7 +13,7 @@
 - 프로토콜: `HTTP/1.1`
 - 전송: `TCP`
 - 본문 형식: `application/json; charset=utf-8`
-- 엔드포인트: `GET /health`, `POST /query`
+- 엔드포인트: `GET /`, `GET /health`, `POST /query`
 
 기본 서버 설정은 다음과 같다.
 
@@ -38,8 +38,10 @@
 
 ### 3.2 Content-Type
 
+- `GET /`는 `text/html; charset=utf-8`을 반환한다.
+- `GET /`는 요청 본문이 없어야 한다.
 - `POST /query` 요청은 `Content-Type: application/json`이어야 한다.
-- 성공 응답과 오류 응답 모두 `application/json; charset=utf-8`로 반환한다.
+- `GET /health`, `POST /query`의 성공 응답과 오류 응답은 `application/json; charset=utf-8`로 반환한다.
 - `GET /health`는 요청 본문이 없어야 한다.
 - `GET /health`에서 `Content-Length: 0`은 허용한다.
 - `GET /health`에서 body가 없으면 `Content-Type` 헤더는 있어도 무시한다.
@@ -177,6 +179,7 @@
 | JSON 파싱 실패 | 400 | `INVALID_JSON` |
 | `Content-Type` 누락 또는 비지원 | 400 | `INVALID_CONTENT_TYPE` |
 | `GET /health`에 body가 존재 | 400 | `INVALID_JSON` |
+| `GET /`에 body가 존재 | 400 | `INVALID_JSON` |
 | `Content-Length` 누락 | 411 | `CONTENT_LENGTH_REQUIRED` |
 | `Content-Length` 값이 숫자가 아니거나 body와 불일치 | 400 | `INVALID_CONTENT_LENGTH` |
 | body 크기 또는 SQL 길이 제한 초과 | 413 | `PAYLOAD_TOO_LARGE` |
@@ -235,14 +238,54 @@ Content-Type: application/json; charset=utf-8
 - `worker_count`: 현재 worker thread 개수
 - `queue_depth`: 현재 작업 큐 대기 수
 
-## 8. `POST /query`
+## 8. `GET /`
 
 ### 8.1 목적
+
+- 브라우저에서 바로 접근 가능한 진입 페이지를 제공한다.
+- 간단한 SQL 입력 UI를 통해 기존 `POST /query` API를 호출할 수 있게 한다.
+- 발표와 데모에서 서버와 API 사용법을 빠르게 확인할 수 있게 한다.
+
+### 8.2 요청
+
+```http
+GET / HTTP/1.1
+Host: 127.0.0.1:8080
+```
+
+규칙:
+
+- `GET /`는 request body를 허용하지 않는다.
+- 응답 본문은 단일 HTML 페이지다.
+
+### 8.3 성공 응답
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+응답 본문은 아래 요소를 포함한다.
+
+- 서비스 이름과 지원 엔드포인트 안내
+- SQL 입력 textarea
+- 실행 버튼
+- 결과 출력 영역
+- 에러 코드와 메시지 표시 영역
+
+### 8.4 동작 방식
+
+- 페이지 내부 JavaScript는 사용자가 입력한 SQL을 `POST /query`로 전송한다.
+- 따라서 `/`는 별도의 SQL 실행 계약을 만들지 않고, 기존 JSON API의 브라우저용 클라이언트 역할만 한다.
+
+## 9. `POST /query`
+
+### 9.1 목적
 
 - 외부 클라이언트가 SQL 문장을 실행하는 기본 엔드포인트다.
 - 8주차 최소 구현에서는 모든 DB 조작 요청을 이 엔드포인트로 처리한다.
 
-### 8.2 요청 헤더
+### 9.2 요청 헤더
 
 ```http
 POST /query HTTP/1.1
@@ -251,7 +294,7 @@ Content-Type: application/json; charset=utf-8
 Content-Length: 47
 ```
 
-### 8.3 요청 본문
+### 9.3 요청 본문
 
 ```json
 {
@@ -259,7 +302,7 @@ Content-Length: 47
 }
 ```
 
-### 8.4 요청 필드 규칙
+### 9.4 요청 필드 규칙
 
 - `sql` 필드는 필수다.
 - `sql`은 문자열이어야 한다.
@@ -272,9 +315,9 @@ Content-Length: 47
 - `Content-Length`는 10진수 정수여야 하며 실제 수신 body 길이와 일치해야 한다.
 - `Transfer-Encoding: chunked`는 지원하지 않는다.
 
-## 9. `POST /query` 성공 응답
+## 10. `POST /query` 성공 응답
 
-### 9.1 `SELECT` 성공 예시
+### 10.1 `SELECT` 성공 예시
 
 ```http
 HTTP/1.1 200 OK
@@ -290,7 +333,7 @@ Content-Type: application/json; charset=utf-8
 }
 ```
 
-### 9.2 `INSERT` 성공 예시
+### 10.2 `INSERT` 성공 예시
 
 ```http
 HTTP/1.1 200 OK
@@ -306,7 +349,7 @@ Content-Type: application/json; charset=utf-8
 }
 ```
 
-### 9.3 성공 응답 필드
+### 10.3 성공 응답 필드
 
 - `ok`: 성공 여부. 성공 시 `true`
 - `statement_type`: `select` 또는 `insert`
@@ -315,15 +358,17 @@ Content-Type: application/json; charset=utf-8
 - `output`: executor가 생성한 출력 문자열
 - `elapsed_ms`: 요청 처리 시간 밀리초 단위 값
 
-### 9.4 `output` 필드 의미
+### 10.4 `output` 필드 의미
 
 - `SELECT`에서는 표 형식 문자열을 담는다.
 - 최소 구현에서 `INSERT` 성공 시 `output`은 항상 빈 문자열 `""`다.
 - 본 API는 최소 구현에서 row 배열 JSON을 직접 제공하지 않는다.
+- `output` 내부 줄바꿈은 LF(`\n`) 기준으로 유지한다.
+- HTTP 헤더 줄바꿈(`\r\n`)과 `output` 문자열 줄바꿈은 별개이며, JSON 역직렬화 후 브라우저 `pre` 출력에서는 LF 기준 줄바꿈이 그대로 보존되어야 한다.
 
-## 10. `POST /query` 오류 응답
+## 11. `POST /query` 오류 응답
 
-### 10.1 공통 오류 형식
+### 11.1 공통 오류 형식
 
 ```http
 HTTP/1.1 400 Bad Request
@@ -338,13 +383,13 @@ Content-Type: application/json; charset=utf-8
 }
 ```
 
-### 10.2 오류 응답 필드
+### 11.2 오류 응답 필드
 
 - `ok`: 실패 시 `false`
 - `error.code`: 기계 판독용 오류 코드
 - `error.message`: 사람이 읽을 수 있는 상세 설명
 
-### 10.3 대표 오류 사례
+### 11.3 대표 오류 사례
 
 잘못된 JSON:
 
@@ -436,23 +481,28 @@ Content-Type: application/json; charset=utf-8
 }
 ```
 
-## 11. 메서드 및 경로 규칙
+## 12. 메서드 및 경로 규칙
 
-### 11.1 `GET /health`
+### 12.1 `GET /`
 
 - 허용 메서드: `GET`
 - 다른 메서드 사용 시 `405 Method Not Allowed`
 
-### 11.2 `POST /query`
+### 12.2 `GET /health`
+
+- 허용 메서드: `GET`
+- 다른 메서드 사용 시 `405 Method Not Allowed`
+
+### 12.3 `POST /query`
 
 - 허용 메서드: `POST`
 - 다른 메서드 사용 시 `405 Method Not Allowed`
 
-### 11.3 그 외 경로
+### 12.4 그 외 경로
 
 - `404 Not Found`
 
-## 12. 동시성 및 정합성 보장
+## 13. 동시성 및 정합성 보장
 
 본 API는 아래 보장을 제공한다.
 
@@ -468,7 +518,7 @@ Content-Type: application/json; charset=utf-8
 - 세션 격리 수준
 - read/write lock 분리
 
-## 13. 요청 제한
+## 14. 요청 제한
 
 - 요청 본문은 JSON 객체 하나만 허용한다.
 - request body 최대 크기는 `16 KiB`다.
@@ -493,21 +543,21 @@ header 크기 계산 규칙:
 - obsolete line folding은 지원하지 않는다.
 - 줄바꿈으로 이어지는 folded header는 잘못된 요청으로 처리한다.
 
-## 14. 서버 시작 실패 정책
+## 15. 서버 시작 실패 정책
 
 - 잘못된 `--port`, `--worker-count`, `--queue-capacity`는 시작 실패다.
 - 존재하지 않는 `--schema-dir`, `--data-dir`는 시작 실패다.
 - 시작 실패 시 서버는 표준 오류 출력에 메시지를 남기고 `exit code 1`로 종료한다.
 
-## 15. 테스트 예시
+## 16. 테스트 예시
 
-### 15.1 health check
+### 16.1 health check
 
 ```bash
 curl -i http://127.0.0.1:8080/health
 ```
 
-### 15.2 select query
+### 16.2 select query
 
 ```bash
 curl -i -X POST http://127.0.0.1:8080/query ^
@@ -515,7 +565,7 @@ curl -i -X POST http://127.0.0.1:8080/query ^
   -d "{\"sql\":\"SELECT id, name FROM users WHERE id = 1;\"}"
 ```
 
-### 15.3 insert query
+### 16.3 insert query
 
 ```bash
 curl -i -X POST http://127.0.0.1:8080/query ^

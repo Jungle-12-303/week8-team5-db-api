@@ -34,6 +34,7 @@ SERVER_LIBRARY_SOURCES = \
 	src/http/http_request.c \
 	src/http/http_response.c \
 	src/http/router.c \
+	src/api/root_handler.c \
 	src/api/health_handler.c \
 	src/api/query_handler.c \
 	src/service/db_service.c \

@@ -37,6 +37,7 @@ void http_response_init(HttpResponse *response) {
 
 /* body 버퍼를 해제하고 재사용 가능한 상태로 되돌린다. */
 void http_response_free(HttpResponse *response) {
+    free(response->content_type);
     free(response->body);
     memset(response, 0, sizeof(*response));
 }
@@ -156,14 +157,34 @@ char *http_json_escape(const char *value) {
 }
 
 /* JSON body와 상태 코드를 응답 구조체에 저장한다. */
-int http_response_set_json(HttpResponse *response, int status_code, const char *json_body) {
+int http_response_set_body(HttpResponse *response, int status_code, const char *content_type, const char *body) {
     response->status_code = status_code;
-    response->body = copy_string(json_body);
-    if (response->body == NULL) {
+    response->content_type = copy_string(content_type);
+    response->body = copy_string(body);
+    if (response->content_type == NULL || response->body == NULL) {
+        free(response->content_type);
+        free(response->body);
+        response->content_type = NULL;
+        response->body = NULL;
+        response->body_length = 0;
         return 0;
     }
     response->body_length = strlen(response->body);
     return 1;
+}
+
+int http_response_set_json(HttpResponse *response, int status_code, const char *json_body) {
+    return http_response_set_body(response,
+                                  status_code,
+                                  "application/json; charset=utf-8",
+                                  json_body);
+}
+
+int http_response_set_html(HttpResponse *response, int status_code, const char *html_body) {
+    return http_response_set_body(response,
+                                  status_code,
+                                  "text/html; charset=utf-8",
+                                  html_body);
 }
 
 /* 엔진 오류를 표준 JSON 오류 응답 형태로 감싼다. */
@@ -196,12 +217,13 @@ int http_response_send(sql_socket_t socket_fd, const HttpResponse *response) {
     int written = snprintf(header,
                            sizeof(header),
                            "HTTP/1.1 %d %s\r\n"
-                           "Content-Type: application/json; charset=utf-8\r\n"
+                           "Content-Type: %s\r\n"
                            "Content-Length: %zu\r\n"
                            "Connection: close\r\n"
                            "\r\n",
                            response->status_code,
                            http_reason_phrase(response->status_code),
+                           response->content_type != NULL ? response->content_type : "application/json; charset=utf-8",
                            response->body_length);
     if (written < 0 || (size_t)written >= sizeof(header)) {
         return 0;

@@ -2,10 +2,20 @@
 
 #include "sqlparser/api/health_handler.h"
 #include "sqlparser/api/query_handler.h"
+#include "sqlparser/api/root_handler.h"
 
 #include <string.h>
 
 int http_route_request(const HttpRequest *request, const ApiContext *context, HttpResponse *response) {
+    if (strcmp(request->path, "/") == 0) {
+        if (strcmp(request->method, "GET") != 0) {
+            return http_response_set_error(response,
+                                           SQL_ENGINE_ERROR_METHOD_NOT_ALLOWED,
+                                           "only GET is allowed for /");
+        }
+        return api_handle_root(request, context, response);
+    }
+
     if (strcmp(request->path, "/health") == 0) {
         if (strcmp(request->method, "GET") != 0) {
             return http_response_set_error(response,

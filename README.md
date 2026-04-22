@@ -25,7 +25,7 @@
 
 - `기존 SQL 처리기 재사용`: 기존 `lexer`, `parser`, `executor`, `storage`, `index` 계층을 그대로 내부 엔진으로 사용합니다.
 - `B+ 트리 인덱스 재사용`: `WHERE id = ...` 조회와 lazy rebuild 경로를 기존 인덱스 레이어 위에서 유지합니다.
-- `API 서버 제공`: `HTTP/1.1 over TCP` 기반으로 `GET /health`, `POST /query`를 제공합니다.
+- `API 서버 제공`: `HTTP/1.1 over TCP` 기반으로 `GET /`, `GET /health`, `POST /query`를 제공합니다.
 - `스레드 풀`: 연결은 accept thread가 받고, worker thread가 실제 SQL 요청을 처리합니다.
 - `병렬 SQL 처리`: 서로 다른 테이블은 병렬 처리하고, 같은 물리 테이블은 `storage_name` 기준으로 직렬화합니다.
 - `엣지 케이스 처리`: 잘못된 헤더, JSON 오류, SQL 오류, body/header 한도 초과, `chunked` 미지원, queue full을 명시적으로 처리합니다.
@@ -50,7 +50,7 @@ client
 
 - `server`: 소켓 생성, `bind/listen/accept`, 작업 큐 적재, worker pool 제어, queue full 시 즉시 `503` 반환
 - `http`: request line/header/body 파싱, HTTP 한도 검증, 라우팅, JSON 응답 생성
-- `api`: 엔드포인트별 요청 검증과 서비스 호출
+- `api`: 엔드포인트별 요청 검증, 루트 HTML 반환, 서비스 호출
 - `service`: API 입력을 내부 SQL 실행 요청으로 위임하는 얇은 경계
 - `engine adapter`: SQL 길이 검증, lexer/parser 호출, schema 로딩, 락 획득/해제, executor 호출, 출력 캡처, 오류 코드 분류
 - `sql/execution/storage/index`: 7주차 SQL 엔진과 B+ 트리 인덱스 구현
@@ -58,6 +58,7 @@ client
 ### 3.3 핵심 설계 선택
 
 - 서버 실행 모델은 `1 connection = 1 request`입니다.
+- `GET /`는 브라우저용 HTML 진입 페이지를 반환합니다.
 - `POST /query`는 `Content-Length` 기반 고정 길이 body만 지원합니다.
 - keep-alive, pipelining, `Transfer-Encoding: chunked`는 지원하지 않습니다.
 - 조회 결과는 구조화된 row 배열 대신 기존 엔진의 표 출력 문자열을 그대로 JSON `output`에 담습니다.
@@ -129,6 +130,7 @@ client
 ### 7.1 지원 엔드포인트
 
 - `GET /health`
+- `GET /`
 - `POST /query`
 
 ### 7.2 지원 SQL
@@ -159,7 +161,11 @@ client
 
 ## 8. API 사용 방법
 
-### 8.1 `GET /health`
+### 8.1 `GET /`
+
+브라우저에서 `http://127.0.0.1:8080/`로 접근하면 SQL 입력창과 결과 출력 패널이 있는 진입 페이지가 열립니다. 이 페이지는 내부적으로 기존 `POST /query`를 호출하는 얇은 프론트엔드입니다.
+
+### 8.2 `GET /health`
 
 요청:
 
@@ -179,7 +185,7 @@ Host: 127.0.0.1:8080
 }
 ```
 
-### 8.2 `POST /query`
+### 8.3 `POST /query`
 
 요청:
 
@@ -336,6 +342,7 @@ curl -i -X POST http://127.0.0.1:8080/query \
 - SQL 엔진 기본 회귀 동작
 - B+ 트리 동작과 인덱스 rebuild / invalidate / recovery
 - CLI 에러 메시지와 사용법 출력
+- `GET /` 루트 페이지 응답
 - `GET /health` 정상/비정상 요청
 - `POST /query` 정상 요청
 - `Content-Type`, `Content-Length`, header/body 한도 검증
@@ -393,7 +400,7 @@ week7-reference-docs/     7주차 참고 문서
 현재 구현은 8주차 과제 범위에 맞춘 최소 구현입니다.
 
 - HTTP/1.1만 지원합니다.
-- 엔드포인트는 `GET /health`, `POST /query` 두 개뿐입니다.
+- 엔드포인트는 `GET /`, `GET /health`, `POST /query` 중심의 최소 범위만 제공합니다.
 - 조회 결과는 구조화된 row 배열이 아니라 문자열 표 출력입니다.
 - 같은 테이블 요청은 모두 직렬화되므로 경쟁이 높은 상황에서는 병목이 생길 수 있습니다.
 - keep-alive, `chunked` transfer, transaction, authentication은 지원하지 않습니다.

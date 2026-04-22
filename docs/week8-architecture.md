@@ -22,7 +22,7 @@
 이번 8주차 구조의 핵심 결정은 다음과 같다.
 
 - API 프로토콜은 `HTTP/1.1 over TCP`로 선택한다.
-- 외부 API는 최소 범위로 `GET /health`, `POST /query` 두 개만 제공한다.
+- 외부 진입점은 `GET /`, `GET /health`, `POST /query`로 구성한다.
 - 기존 7주차 SQL 처리기와 B+ 트리 인덱스를 내부 DB 엔진으로 재사용한다.
 - API 서버는 기존 `sql -> execution -> storage/index` 계층 바깥에 추가한다.
 - 서버는 `accept loop + task queue + worker thread pool` 구조를 사용한다.
@@ -42,7 +42,7 @@
 ### 3.1 계층 구조
 
 ```text
-client
+browser / api client
   -> http server
   -> router / handler
   -> service
@@ -82,6 +82,7 @@ index -> common
 - 클라이언트 연결 하나는 요청 하나만 전송한다고 가정한다.
 - 서버는 요청 하나를 처리한 뒤 응답을 보내고 연결을 닫아도 된다.
 - HTTP keep-alive, pipelining, connection reuse는 이번 범위에서 지원하지 않는다.
+- `GET /`는 브라우저 진입용 HTML 페이지를 반환한다.
 - `POST /query`는 `Content-Length` 기반 고정 길이 body만 지원한다.
 - `Transfer-Encoding: chunked`는 지원하지 않는다.
 - `GET /health`는 request body를 허용하지 않으며, body가 있으면 잘못된 요청으로 처리한다.
@@ -112,6 +113,7 @@ src/
     http_response.c
     router.c
   api/
+    root_handler.c
     health_handler.c
     query_handler.c
   service/
@@ -215,11 +217,12 @@ build/bin/sqlapi_server
 
 책임:
 
-- `GET /health`, `POST /query` 엔드포인트 처리
+- `GET /`, `GET /health`, `POST /query` 엔드포인트 처리
 - 요청 필드 유효성 검사
 - 서비스 호출
 - 서비스 결과를 HTTP 응답으로 변환
 - `GET /health`의 body 금지 규칙 적용
+- `GET /` HTML 페이지 반환
 
 비책임:
 
@@ -291,7 +294,16 @@ build/bin/sqlapi_server
 
 ## 6. 요청 처리 흐름
 
-### 6.1 `GET /health`
+### 6.1 `GET /`
+
+1. browser가 `GET /` 요청을 보낸다.
+2. accept loop가 연결을 수락한다.
+3. 작업 큐에 연결을 넣는다.
+4. worker가 요청을 읽고 router로 전달한다.
+5. `root_handler`가 브라우저 진입용 HTML을 생성한다.
+6. HTTP 200 HTML 응답을 반환한다.
+
+### 6.2 `GET /health`
 
 1. client가 `GET /health` 요청을 보낸다.
 2. accept loop가 연결을 수락한다.
@@ -300,7 +312,7 @@ build/bin/sqlapi_server
 5. `health_handler`가 서버 상태를 확인한다.
 6. HTTP 200 JSON 응답을 반환한다.
 
-### 6.2 `POST /query`
+### 6.3 `POST /query`
 
 1. client가 `POST /query` 요청을 보낸다.
 2. accept loop가 연결을 수락한다.
@@ -320,7 +332,7 @@ build/bin/sqlapi_server
 16. service/api 계층이 JSON 응답을 구성한다.
 17. worker가 응답을 쓰고 연결을 정리한다.
 
-### 6.3 작업 큐 단위
+### 6.4 작업 큐 단위
 
 작업 큐가 담는 단위는 `connection task`다.
 
@@ -609,8 +621,10 @@ request line + header 크기 한도는 `8 KiB`이며, 계산 규칙은 다음과
 ### 12.2 필수 검증 시나리오
 
 - `GET /health` 정상 응답
+- `GET /` 정상 HTML 응답
 - `POST /query` 정상 `SELECT`
 - `POST /query` 정상 `INSERT`
+- `POST /query` 응답의 `output`이 LF 줄바꿈을 유지하고 JSON 직렬화/역직렬화 후에도 깨지지 않는지 확인
 - alias table name과 storage file name이 달라도 같은 물리 테이블 락을 공유하는지 확인
 - 같은 테이블 동시 `INSERT`에서 `id` 중복이 없는지 확인
 - 같은 테이블 동시 read/write에서 정합성이 깨지지 않는지 확인
@@ -624,7 +638,7 @@ request line + header 크기 한도는 `8 KiB`이며, 계산 규칙은 다음과
 
 이번 구조의 의도적 한계는 다음과 같다.
 
-- `POST /query` 단일 엔드포인트 중심 구조다.
+- 브라우저 진입점은 `GET /` 하나지만, 실제 DB 조작 계약은 여전히 `POST /query` 중심이다.
 - 응답 데이터는 구조화된 row 배열이 아니라 문자열 표 출력 중심이다.
 - 같은 테이블 요청은 모두 직렬화하므로 높은 write 경쟁 상황에서는 병목이 생길 수 있다.
 - read/write lock 분리, 세분화된 인덱스 락, 세션 격리 수준은 이번 범위에 포함하지 않는다.
@@ -642,7 +656,7 @@ request line + header 크기 한도는 `8 KiB`이며, 계산 규칙은 다음과
 아래 조건을 만족하면 본 아키텍처 문서 기준 최소 구현 완료로 본다.
 
 - API 서버가 `HTTP/1.1` 기반으로 동작한다.
-- `GET /health`, `POST /query`가 동작한다.
+- `GET /`, `GET /health`, `POST /query`가 동작한다.
 - worker thread pool과 bounded task queue가 동작한다.
 - 기존 7주차 엔진을 재사용한다.
 - 같은 테이블 요청은 직렬화된다.

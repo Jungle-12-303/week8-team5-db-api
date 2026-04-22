@@ -219,6 +219,17 @@ static int expect_true(int condition, const char *name) {
     return 1;
 }
 
+static int expect_not_contains(const char *response, const char *needle, const char *name) {
+    if (strstr(response, needle) != NULL) {
+        fprintf(stderr, "[FAIL] %s\n", name);
+        fprintf(stderr, "response was:\n%s\n", response);
+        return 0;
+    }
+
+    printf("[PASS] %s\n", name);
+    return 1;
+}
+
 static int send_large_http_request(const char *host,
                                    int port,
                                    const char *request_prefix,
@@ -488,6 +499,39 @@ int run_api_server_tests(void) {
 
     if (!send_http_request("127.0.0.1",
                            port,
+                           "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET /\n");
+        failures++;
+    } else {
+        failures += !expect_contains(response, "HTTP/1.1 200 OK", "GET / returns 200");
+        failures += !expect_contains(response, "Content-Type: text/html; charset=utf-8", "GET / returns HTML content type");
+        failures += !expect_contains(response, "<title>SQL API Console</title>", "GET / returns root page title");
+        failures += !expect_contains(response, "POST /query", "GET / documents query endpoint");
+        failures += !expect_contains(response, "textarea id=\"sql-input\"", "GET / returns SQL input console");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET / HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Content-Length: 2\r\n"
+                           "\r\n"
+                           "{}",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET / with body\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"INVALID_JSON\"",
+                                           "GET / with body");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
                            "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
                            response,
                            sizeof(response))) {
@@ -500,6 +544,20 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "\"status\":\"ok\"", "GET /health returns ok status");
         failures += !expect_contains(response, "\"worker_count\":2", "GET /health reports worker count");
         failures += !expect_contains(response, "\"queue_depth\":0", "GET /health reports queue depth");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 405 Method Not Allowed",
+                                           "\"code\":\"METHOD_NOT_ALLOWED\"",
+                                           "POST /");
     }
 
     if (!send_http_request("127.0.0.1",
@@ -566,6 +624,12 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "HTTP/1.1 200 OK", "POST /query returns 200");
         failures += !expect_contains(response, "\"statement_type\":\"select\"", "POST /query reports select type");
         failures += !expect_contains(response, "Alice", "POST /query returns SELECT output");
+        failures += !expect_contains(response, "\"output\":\"+", "POST /query returns table output body");
+        failures += !expect_contains(response, "\\n|", "POST /query serializes row breaks with LF escapes");
+        failures += !expect_not_contains(response, "\\r\\n| id | name |", "POST /query output does not serialize CRLF escapes");
+        failures += !expect_not_contains(response, "\\r\\n| 1  | Alice |", "POST /query row output does not serialize CRLF escapes");
+        failures += !expect_not_contains(response, "\r\n| id | name |", "POST /query JSON body does not contain raw CRLF row separators");
+        failures += !expect_not_contains(response, "\r\n| 1  | Alice |", "POST /query JSON body rows are not split by raw CRLF");
     }
 
     snprintf(request,

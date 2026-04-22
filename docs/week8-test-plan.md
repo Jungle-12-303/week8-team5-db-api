@@ -34,6 +34,7 @@
 - 7주차 SQL 엔진 회귀 테스트
 - HTTP 요청/응답 기능 테스트
 - JSON 파싱 및 입력 검증 테스트
+- `GET /`
 - `GET /health`
 - `POST /query`
 - 지원 SQL 범위 검증
@@ -187,6 +188,8 @@ build/bin/sqlapi_server
 ### 6.1 기본 엔드포인트 계약
 
 - `GET /health` 200 응답: `완료`
+- `GET /` HTML 진입 페이지 응답: `완료`
+- `GET /`에서 request body 금지: `완료`
 - `GET /health` 응답 필드 `ok`, `status`, `worker_count`, `queue_depth`: `완료`
 - `GET /health` 응답 `Content-Type: application/json; charset=utf-8`: `완료`
 - `GET /health`에서 request body 금지: `완료`
@@ -194,6 +197,7 @@ build/bin/sqlapi_server
 - `POST /query` 정상 `SELECT` 실행: `완료`
 - `POST /query` 성공 응답 `Content-Type: application/json; charset=utf-8`: `완료`
 - `POST /query`에서 `application/json; charset=utf-8` 허용: `완료`
+- `POST /query` 응답 `output`이 LF 줄바꿈을 유지하고 CRLF로 바뀌지 않음: `완료`
 
 ### 6.2 HTTP 요청 형식 검증
 
@@ -250,7 +254,9 @@ build/bin/sqlapi_server
 현재 `tests/test_api_server.c`는 인프로세스로 서버를 띄운 뒤, 실제 TCP 소켓으로 요청을 보내는 black-box 방식으로 아래 항목을 자동 검증한다.
 
 - 헬스체크 정상/비정상 요청
+- 루트 HTML 페이지 노출
 - `POST /query` 정상 요청
+- `POST /query` 응답 `output`의 LF 줄바꿈 유지
 - 헤더, body, JSON, 경로, 메서드 관련 대표 오류 코드
 - 대표 SQL 오류 매핑
 - 대표 스토리지 I/O 오류 매핑
@@ -390,7 +396,16 @@ fixture 규칙:
 - `Content-Length: 0`은 허용
 - body가 없으면 `Content-Type` 헤더가 있어도 허용
 
-### 9.2 `POST /query` 정상 케이스
+### 9.2 `GET /`
+
+- 정상 `GET /`는 `200`
+- 응답 본문은 HTML
+- SQL 입력 textarea와 실행 버튼이 포함됨
+- 페이지 내부에서 `POST /query` 호출 경로가 드러남
+- body가 있으면 `400`
+- `POST /`는 `405`
+
+### 9.3 `POST /query` 정상 케이스
 
 - `SELECT * FROM student;`
 - `SELECT id, name FROM student WHERE id = 1;`
@@ -406,8 +421,10 @@ fixture 규칙:
 - `summary`
 - `output`
 - `INSERT` 성공 시 `output=""`
+- `SELECT` 성공 시 `output` 문자열은 LF(`\n`) 기준 줄바꿈을 유지하고 CRLF(`\r\n`)로 바뀌지 않는다.
+- 브라우저/Windows 계열 환경에서도 `response.json()` 이후 `pre.textContent`에 넣었을 때 LF 줄바꿈으로 정상 표시되어야 한다.
 
-### 9.3 `POST /query` 비정상 케이스
+### 9.4 `POST /query` 비정상 케이스
 
 - 잘못된 JSON
 - `Content-Type` 누락 또는 비지원
@@ -437,13 +454,14 @@ fixture 규칙:
 - `error.code`
 - `error.message`
 
-### 9.4 경로 및 메서드 케이스
+### 9.5 경로 및 메서드 케이스
 
 - 없는 경로는 `404`
 - `GET /query`는 `405`
+- `POST /`는 `405`
 - `POST /health`는 `405`
 
-### 9.5 오류 코드 매핑 검증
+### 9.6 오류 코드 매핑 검증
 
 아래 매핑은 명세서와 1:1로 일치해야 한다.
 
@@ -465,7 +483,7 @@ fixture 규칙:
 - `ENGINE_EXECUTION_ERROR` -> `500`
 - `QUEUE_FULL` -> `503`
 
-### 9.6 서버 시작 옵션 검증
+### 9.7 서버 시작 옵션 검증
 
 - `--port 0` -> 시작 실패
 - `--port 65536` -> 시작 실패
@@ -480,7 +498,7 @@ fixture 규칙:
 - 표준 오류 출력에 오류 메시지가 남는지
 - `exit code 1`로 종료하는지
 
-### 9.7 header size 경계값 검증
+### 9.8 header size 경계값 검증
 
 - request line + header가 `8192` 바이트인 요청 허용 여부
 - request line + header가 `8193` 바이트인 요청 거부 여부
@@ -604,6 +622,7 @@ fixture 규칙:
 
 - 7주차 엔진 회귀 테스트가 통과한다.
 - `GET /health` 기능 테스트가 통과한다.
+- `GET /` 기능 테스트가 통과한다.
 - `POST /query`의 정상/비정상 기능 테스트가 통과한다.
 - 서버 시작 옵션 검증 테스트가 통과한다.
 - 같은 테이블 동시성 정합성 테스트가 통과한다.
@@ -634,6 +653,7 @@ README와 발표에는 최소한 아래 내용을 포함한다.
 
 - 엔진 회귀
 - `GET /health`
+- `GET /`
 - `POST /query` 정상/비정상
 - 같은 테이블 동시 `INSERT`
 
