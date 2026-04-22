@@ -21,7 +21,8 @@
 
 - 테스트는 `엔진 회귀`, `API 기능`, `동시성`, `복구성`으로 나눠 관리한다.
 - 단위 테스트는 빠르게 반복 가능해야 한다.
-- API 테스트는 실제 서버 프로세스를 띄운 상태에서 black-box로 검증한다.
+- API 테스트는 TCP 소켓을 통해 black-box로 검증한다.
+- 자동 테스트는 기본적으로 인프로세스 서버를 띄워 HTTP 계약을 검증하고, CLI/프로세스 경계 검증은 별도 보강 항목으로 관리한다.
 - 동시성 테스트는 정합성 위반 여부와 병렬성 보장 여부를 함께 본다.
 - 테스트 데이터는 항상 격리된 임시 디렉터리에서 준비한다.
 - 테스트 결과는 README와 발표에 재현 가능한 형태로 남긴다.
@@ -93,7 +94,8 @@ build/bin/sqlapi_server
 테스트 원칙:
 
 - 각 API 테스트는 임시 `schema/`, `data/` 디렉터리를 만든다.
-- 서버는 해당 임시 경로를 CLI 옵션으로 주입받아 실행된다.
+- 자동 API 테스트는 해당 임시 경로를 `SqlApiServerConfig`에 직접 주입해 서버를 실행한다.
+- 별도 프로세스 기반 검증을 추가하는 경우에는 동일한 임시 경로를 CLI 옵션으로 주입한다.
 - 테스트는 운영 데이터나 저장소 루트의 기본 `schema/`, `data/`를 직접 오염시키지 않는다.
 
 ### 4.3 테스트용 데이터 경로
@@ -213,24 +215,24 @@ build/bin/sqlapi_server
 - parser 실패 시 `400 SQL_PARSE_ERROR`: `완료`
 - 지원하지 않는 SQL 시 `400 UNSUPPORTED_SQL`: `완료`
 - 잘못된 SQL 인자 시 `400 INVALID_SQL_ARGUMENT`: `완료`
-- lexer 실패 시 `400 SQL_LEX_ERROR`: `추가 필요`
-- multi-statement 거부: `추가 필요`
+- lexer 실패 시 `400 SQL_LEX_ERROR`: `완료`
+- multi-statement 거부: `완료`
 
 ### 6.4 엔진/스토리지 오류 매핑
 
 - 스키마 로딩 실패 시 `500 SCHEMA_LOAD_ERROR`: `완료`
-- CSV 파일 I/O 실패 시 `500 STORAGE_IO_ERROR`: `추가 필요`
+- CSV 파일 I/O 실패 시 `500 STORAGE_IO_ERROR`: `완료`
 - 인덱스 rebuild 실패 시 `500 INDEX_REBUILD_ERROR`: `추가 필요`
 - 분류되지 않은 executor 실패 시 `500 ENGINE_EXECUTION_ERROR`: `추가 필요`
 - 분류되지 않은 내부 오류 시 `500 INTERNAL_ERROR`: `추가 필요`
 
 ### 6.5 서버 시작/종료 및 환경 검증
 
-- `--port` 범위 검증: `추가 필요`
-- `--worker-count >= 1` 검증: `추가 필요`
-- `--queue-capacity >= 1` 검증: `추가 필요`
-- 존재하지 않는 `--schema-dir` 거부: `추가 필요`
-- 존재하지 않는 `--data-dir` 거부: `추가 필요`
+- `--port` 범위 검증: `완료`
+- `--worker-count >= 1` 검증: `완료`
+- `--queue-capacity >= 1` 검증: `완료`
+- 존재하지 않는 `--schema-dir` 거부: `완료`
+- 존재하지 않는 `--data-dir` 거부: `완료`
 - 종료 경로에서 accept thread / worker 정리: `추가 필요`
 
 ### 6.6 병렬성 및 동시성 검증
@@ -238,27 +240,29 @@ build/bin/sqlapi_server
 - 다중 동시 요청 처리: `추가 필요`
 - 같은 테이블 동시 접근 직렬화: `추가 필요`
 - 다른 테이블 요청 병렬 처리: `추가 필요`
-- queue full 시 `503 QUEUE_FULL`: `추가 필요`
+- queue full 시 `503 QUEUE_FULL`: `완료`
 - race condition / deadlock / unlock 누락 점검: `추가 필요`
 - 재시작 후 데이터 조회 가능 여부: `추가 필요`
 - 인덱스 기반 조회 경로 유지: `추가 필요`
 
 ## 7. 현재 자동 테스트 반영 전략
 
-현재 `tests/test_api_server.c`는 실제 서버를 띄운 뒤 black-box 방식으로 아래 항목을 자동 검증한다.
+현재 `tests/test_api_server.c`는 인프로세스로 서버를 띄운 뒤, 실제 TCP 소켓으로 요청을 보내는 black-box 방식으로 아래 항목을 자동 검증한다.
 
 - 헬스체크 정상/비정상 요청
 - `POST /query` 정상 요청
 - 헤더, body, JSON, 경로, 메서드 관련 대표 오류 코드
 - 대표 SQL 오류 매핑
 - 대표 스토리지 I/O 오류 매핑
+- 시작 옵션/데이터 경로 검증
+- queue full 시 `503 QUEUE_FULL`
 
 향후 별도 테스트 파일 또는 보조 스레드/프로세스 fixture가 필요한 항목은 다음과 같다.
 
 - 병렬 요청 및 락 직렬화 검증
-- queue full 재현
 - 시작 옵션 실패를 별도 프로세스로 검증하는 테스트
 - 재시작/복구성 중심 시나리오
+- graceful shutdown drain 보장 검증
 
 ## 8. 테스트 코드 관리 원칙
 

@@ -441,6 +441,8 @@ int run_api_server_tests(void) {
     const char *json_body = "{\"sql\":\"SELECT name FROM users WHERE age = 20;\"}";
     const char *missing_sql_body = "{\"foo\":\"bar\"}";
     const char *parse_error_body = "{\"sql\":\"SELECT FROM users;\"}";
+    const char *lex_error_body = "{\"sql\":\"SELECT name FROM users WHERE age = @;\"}";
+    const char *multi_statement_body = "{\"sql\":\"SELECT name FROM users; SELECT age FROM users;\"}";
     const char *unsupported_sql_body = "{\"sql\":\"UPDATE users SET age = 30;\"}";
     const char *invalid_sql_argument_body = "{\"sql\":\"SELECT name FROM users WHERE id = abc;\"}";
 
@@ -710,6 +712,46 @@ int run_api_server_tests(void) {
              "Content-Length: %zu\r\n"
              "\r\n"
              "%s",
+             strlen(lex_error_body),
+             lex_error_body);
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with lexer error SQL\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"SQL_LEX_ERROR\"",
+                                           "POST /query with lexer error SQL");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen(multi_statement_body),
+             multi_statement_body);
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with multi-statement SQL\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"SQL_PARSE_ERROR\"",
+                                           "POST /query with multi-statement SQL");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
              strlen(unsupported_sql_body),
              unsupported_sql_body);
     if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
@@ -866,7 +908,7 @@ int run_api_server_tests(void) {
         } else {
             failures += !expect_error_response(response,
                                                "HTTP/1.1 500 Internal Server Error",
-                                               "\"code\":\"SCHEMA_LOAD_ERROR\"",
+                                               "\"code\":\"STORAGE_IO_ERROR\"",
                                                "POST /query with missing data file");
         }
     }

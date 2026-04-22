@@ -127,6 +127,16 @@ static SqlEngineErrorCode classify_execution_error(const Statement *statement, c
     return SQL_ENGINE_ERROR_ENGINE_EXECUTION_ERROR;
 }
 
+static SqlEngineErrorCode classify_schema_load_error(const char *message) {
+    if (strstr(message, "failed to open table data file") != NULL ||
+        strstr(message, "table data file is empty") != NULL ||
+        strstr(message, "failed to open schema meta file") != NULL) {
+        return SQL_ENGINE_ERROR_STORAGE_IO_ERROR;
+    }
+
+    return SQL_ENGINE_ERROR_SCHEMA_LOAD_ERROR;
+}
+
 int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
                                const char *sql,
                                SqlEngineAdapterResult *result) {
@@ -176,7 +186,7 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
                                 config->data_dir,
                                 statement_table_name(&parse_result.statement));
     if (!schema_result.ok) {
-        set_error(result, SQL_ENGINE_ERROR_SCHEMA_LOAD_ERROR, schema_result.message);
+        set_error(result, classify_schema_load_error(schema_result.message), schema_result.message);
         free_statement(&parse_result.statement);
         free_tokens(&tokens);
         return 1;

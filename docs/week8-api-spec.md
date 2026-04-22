@@ -187,8 +187,8 @@
 | parser 실패 | 400 | `SQL_PARSE_ERROR` |
 | 현재 엔진이 지원하지 않는 SQL | 400 | `UNSUPPORTED_SQL` |
 | `WHERE id = abc` 같은 잘못된 인자 | 400 | `INVALID_SQL_ARGUMENT` |
-| 스키마 로딩 실패 | 500 | `SCHEMA_LOAD_ERROR` |
-| CSV 파일 열기/읽기 실패 | 500 | `STORAGE_IO_ERROR` |
+| 스키마 meta 해석 실패, 테이블명 불일치, 필수 필드 누락 | 500 | `SCHEMA_LOAD_ERROR` |
+| schema meta 파일 또는 CSV 파일 열기/읽기 실패 | 500 | `STORAGE_IO_ERROR` |
 | 인덱스 rebuild 실패 | 500 | `INDEX_REBUILD_ERROR` |
 | 그 외 executor 실패 | 500 | `ENGINE_EXECUTION_ERROR` |
 | 작업 큐 포화 | 503 | `QUEUE_FULL` |
