@@ -24,6 +24,7 @@
 #include <stdlib.h>
 // strcmp, strchr를 쓰기 위해 포함한다.
 #include <string.h>
+#include <sys/stat.h>
 
 /* SchemaResult 실패 메시지를 공통 형식으로 채우는 헬퍼 함수다. */
 static void set_schema_error(SchemaResult *result, const char *message) {
@@ -115,6 +116,7 @@ static int has_meta_extension(const char *filename) {
 static int file_declares_table(const char *path, const char *table_name, int *matches, char *message, size_t message_size) {
     // meta 파일을 읽을 핸들이다.
     FILE *file;
+    struct stat info;
     // 한 줄씩 읽을 버퍼다.
     char line[4096];
     // 앞뒤 공백을 제거한 문자열이다.
@@ -123,6 +125,15 @@ static int file_declares_table(const char *path, const char *table_name, int *ma
     char *separator;
     // 일치 여부를 담는 플래그다.
     *matches = 0;
+
+    if (stat(path, &info) != 0) {
+        format_system_error(message, message_size, "failed to open schema meta file", path);
+        return 0;
+    }
+    if (!S_ISREG(info.st_mode)) {
+        snprintf(message, message_size, "failed to open schema meta file '%s': not a regular file", path);
+        return 0;
+    }
 
     file = fopen(path, "rb");
     if (file == NULL) {

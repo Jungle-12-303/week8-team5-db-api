@@ -46,24 +46,6 @@
 #define IS_DIRECTORY_FILE(mode) S_ISDIR(mode)
 #endif
 
-// 전달받은 인자가 실제 파일 경로인지 간단히 검사합니다.
-/* 단순히 "이 경로를 파일로 열 수 있는가"를 확인하는 작은 헬퍼 함수다. */
-static int file_exists(const char *path) {
-    // 파일을 열어 존재 여부를 확인할 포인터입니다.
-    FILE *file;
-
-    // 읽기 모드로 파일을 열어 봅니다.
-    file = fopen(path, "rb");
-    // 열기에 성공하면 파일이 존재합니다.
-    if (file != NULL) {
-        fclose(file);
-        return 1;
-    }
-
-    // 열지 못했으면 파일이 없다고 봅니다.
-    return 0;
-}
-
 /*
  * bare argument가 "파일 경로인지" 아니면 "그냥 SQL 문자열인지" 판단한다.
  *
@@ -82,22 +64,13 @@ static int resolve_bare_argument_file(const char *path, int *should_read_file, c
      */
     *should_read_file = 0;
 
-    /*
-     * 가장 쉬운 경우:
-     * 지금 인자가 실제로 존재하는 파일이면 곧바로 파일 입력 모드로 확정한다.
-     * 예: sqlparser examples/select_all_users.sql
-     */
-    if (file_exists(path)) {
-        *should_read_file = 1;
-        return 1;
-    }
-
-    /*
-     * file_exists()는 실패했지만 stat()은 성공한 경우다.
-     * 즉, "경로 자체는 존재한다"는 뜻이므로
-     * 왜 파일로 읽을 수 없는지 세부적으로 나눠서 에러를 만든다.
-     */
     if (STAT_FUNC(path, &info) == 0) {
+        /* 존재하는 일반 파일이면 파일 입력 모드로 확정한다. */
+        if (IS_REGULAR_FILE(info.st_mode)) {
+            *should_read_file = 1;
+            return 1;
+        }
+
         /* 디렉터리를 SQL 파일처럼 넘긴 경우는 명확한 사용자 입력 오류다. */
         if (IS_DIRECTORY_FILE(info.st_mode)) {
             snprintf(error, error_size, "path is a directory, not a SQL file: %s", path);

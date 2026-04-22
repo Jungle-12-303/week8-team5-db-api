@@ -1,3 +1,12 @@
+#ifndef _WIN32
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+#endif
+
 #include "sqlparser/common/platform.h"
 #include "sqlparser/common/util.h"
 #include "sqlparser/server/server.h"
@@ -13,6 +22,7 @@
 #define MAKE_DIR(path) _mkdir(path)
 #define CLOSE_WRITE(socket_fd) shutdown((socket_fd), SD_SEND)
 #else
+#include <netinet/in.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -22,7 +32,37 @@
 #endif
 
 static int api_temp_counter = 0;
-static int next_test_port = 18080;
+
+static int allocate_test_port(void) {
+    sql_socket_t socket_fd;
+    struct sockaddr_in address;
+    socklen_t address_length = (socklen_t)sizeof(address);
+    int port = 0;
+
+    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd == SQL_INVALID_SOCKET) {
+        return 0;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(0);
+
+    if (bind(socket_fd, (const struct sockaddr *)&address, sizeof(address)) != 0) {
+        sql_platform_close_socket(socket_fd);
+        return 0;
+    }
+
+    if (getsockname(socket_fd, (struct sockaddr *)&address, &address_length) != 0) {
+        sql_platform_close_socket(socket_fd);
+        return 0;
+    }
+
+    port = (int)ntohs(address.sin_port);
+    sql_platform_close_socket(socket_fd);
+    return port;
+}
 
 static void build_child_path(char *buffer, size_t size, const char *root, const char *child) {
     snprintf(buffer, size, "%s/%s", root, child);
@@ -166,9 +206,14 @@ int run_api_server_tests(void) {
     SqlApiServerConfig config;
     SqlApiServer *server = NULL;
     char error[256];
-    int port = next_test_port++;
+    int port = allocate_test_port();
     int failures = 0;
     const char *json_body = "{\"sql\":\"SELECT name FROM users WHERE age = 20;\"}";
+
+    if (port == 0) {
+        fprintf(stderr, "[FAIL] allocate API server test port\n");
+        return 1;
+    }
 
     if (!create_test_dirs(root, sizeof(root), schema_dir, sizeof(schema_dir), data_dir, sizeof(data_dir))) {
         fprintf(stderr, "[FAIL] create API server test directories\n");

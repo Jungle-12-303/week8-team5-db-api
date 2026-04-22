@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include "sqlparser/server/server.h"
 
 #include "sqlparser/api/api_context.h"
@@ -356,6 +360,7 @@ void sqlapi_server_request_shutdown(SqlApiServer *server) {
     if (!server->shutting_down) {
         server->shutting_down = 1;
         if (server->listen_socket != SQL_INVALID_SOCKET) {
+            sql_platform_shutdown_socket(server->listen_socket);
             sql_platform_close_socket(server->listen_socket);
             server->listen_socket = SQL_INVALID_SOCKET;
         }

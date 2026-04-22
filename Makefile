@@ -1,6 +1,6 @@
 CC = gcc
 THREAD_FLAGS = -pthread
-CFLAGS = -Wall -Wextra -std=c11 -Iinclude $(THREAD_FLAGS)
+CFLAGS = -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112L -Iinclude $(THREAD_FLAGS)
 TEST_CFLAGS = $(CFLAGS) -DSQLPARSER_BENCHMARK_NO_MAIN
 
 ifeq ($(OS),Windows_NT)

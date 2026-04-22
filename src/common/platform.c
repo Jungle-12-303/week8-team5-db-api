@@ -53,6 +53,14 @@ int sql_platform_close_socket(sql_socket_t socket_fd) {
 #endif
 }
 
+int sql_platform_shutdown_socket(sql_socket_t socket_fd) {
+#ifdef _WIN32
+    return shutdown(socket_fd, SD_BOTH);
+#else
+    return shutdown(socket_fd, SHUT_RDWR);
+#endif
+}
+
 void sql_platform_format_socket_error(char *error, size_t error_size, const char *action) {
 #ifdef _WIN32
     snprintf(error, error_size, "%s: Winsock error %d", action, (int)WSAGetLastError());
