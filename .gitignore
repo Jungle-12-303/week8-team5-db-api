@@ -15,6 +15,7 @@ build/
 
 # data는 공유할 필요 없을 듯
 data
+benchmark-workdir/data/
 student.csv
 product.csv
 
