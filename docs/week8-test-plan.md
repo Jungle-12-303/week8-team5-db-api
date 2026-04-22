@@ -402,6 +402,7 @@ fixture 규칙:
 - 응답 본문은 HTML
 - SQL 입력 textarea와 실행 버튼이 포함됨
 - 페이지 내부에서 `POST /query` 호출 경로가 드러남
+- `help`, `.help`, `--help`는 브라우저 로컬 help로 처리됨
 - body가 있으면 `400`
 - `POST /`는 `405`
 
@@ -423,6 +424,7 @@ fixture 규칙:
 - `INSERT` 성공 시 `output=""`
 - `SELECT` 성공 시 `output` 문자열은 LF(`\n`) 기준 줄바꿈을 유지하고 CRLF(`\r\n`)로 바뀌지 않는다.
 - 브라우저/Windows 계열 환경에서도 `response.json()` 이후 `pre.textContent`에 넣었을 때 LF 줄바꿈으로 정상 표시되어야 한다.
+- 결과 행 수가 많은 `SELECT`도 `500 INTERNAL_ERROR` 없이 성공 응답으로 반환돼야 한다.
 
 ### 9.4 `POST /query` 비정상 케이스
 

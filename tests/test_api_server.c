@@ -355,7 +355,7 @@ static int run_api_server_queue_full_test(void) {
     char data_dir[192];
     char schema_path[224];
     char data_path[224];
-    char response[8192];
+    char response[131072];
     char error[256];
     SqlApiServerConfig config;
     SqlApiServer *server = NULL;
@@ -472,7 +472,7 @@ int run_api_server_tests(void) {
     build_child_path(schema_path, sizeof(schema_path), schema_dir, "users.meta");
     build_child_path(data_path, sizeof(data_path), data_dir, "users.csv");
     if (!write_text_file(schema_path, "table=users\ncolumns=name,age\n") ||
-        !write_text_file(data_path, "name,age\nAlice,20\nBob,21\n")) {
+        !write_text_file(data_path, "name,age\nAlice,20\nBob,21\nCarol,25\nDave,25\n")) {
         fprintf(stderr, "[FAIL] write API server test dataset\n");
         return 1;
     }
@@ -510,6 +510,7 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "<title>SQL API Console</title>", "GET / returns root page title");
         failures += !expect_contains(response, "POST /query", "GET / documents query endpoint");
         failures += !expect_contains(response, "textarea id=\"sql-input\"", "GET / returns SQL input console");
+        failures += !expect_contains(response, "help, .help, --help", "GET / documents browser help commands");
     }
 
     if (!send_http_request("127.0.0.1",
@@ -630,6 +631,28 @@ int run_api_server_tests(void) {
         failures += !expect_not_contains(response, "\\r\\n| 1  | Alice |", "POST /query row output does not serialize CRLF escapes");
         failures += !expect_not_contains(response, "\r\n| id | name |", "POST /query JSON body does not contain raw CRLF row separators");
         failures += !expect_not_contains(response, "\r\n| 1  | Alice |", "POST /query JSON body rows are not split by raw CRLF");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen("{\"sql\":\"SELECT * FROM users WHERE age = 25;\"}"),
+             "{\"sql\":\"SELECT * FROM users WHERE age = 25;\"}");
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with multi-row WHERE age = 25\n");
+        failures++;
+    } else {
+        failures += !expect_contains(response, "HTTP/1.1 200 OK", "POST /query with multi-row WHERE returns 200");
+        failures += !expect_contains(response, "\"statement_type\":\"select\"", "POST /query with multi-row WHERE reports select type");
+        failures += !expect_contains(response, "\"affected_rows\":", "POST /query with multi-row WHERE includes affected_rows field");
+        failures += !expect_contains(response, "Carol", "POST /query with multi-row WHERE includes first matching row");
+        failures += !expect_contains(response, "Dave", "POST /query with multi-row WHERE includes second matching row");
+        failures += !expect_contains(response, "| age |", "POST /query with multi-row WHERE returns age column");
     }
 
     snprintf(request,

@@ -272,11 +272,14 @@ Content-Type: text/html; charset=utf-8
 - 실행 버튼
 - 결과 출력 영역
 - 에러 코드와 메시지 표시 영역
+- 브라우저 내부 help 명령 안내
 
 ### 8.4 동작 방식
 
 - 페이지 내부 JavaScript는 사용자가 입력한 SQL을 `POST /query`로 전송한다.
 - 따라서 `/`는 별도의 SQL 실행 계약을 만들지 않고, 기존 JSON API의 브라우저용 클라이언트 역할만 한다.
+- 단, `help`, `.help`, `--help`는 브라우저 내부 편의 명령으로 처리하며 `POST /query`로 전송하지 않는다.
+- 위 help 명령은 API 서버의 SQL 계약을 확장하는 것이 아니라, 루트 HTML 페이지에 한정된 클라이언트 기능이다.
 
 ## 9. `POST /query`
 
@@ -365,6 +368,7 @@ Content-Type: application/json; charset=utf-8
 - 본 API는 최소 구현에서 row 배열 JSON을 직접 제공하지 않는다.
 - `output` 내부 줄바꿈은 LF(`\n`) 기준으로 유지한다.
 - HTTP 헤더 줄바꿈(`\r\n`)과 `output` 문자열 줄바꿈은 별개이며, JSON 역직렬화 후 브라우저 `pre` 출력에서는 LF 기준 줄바꿈이 그대로 보존되어야 한다.
+- 결과 행 수가 많은 `SELECT`도 JSON 응답 본문 크기 안에서 정상 반환돼야 하며, 응답 조립 과정에서 고정 길이 버퍼 때문에 실패해서는 안 된다.
 
 ## 11. `POST /query` 오류 응답
 

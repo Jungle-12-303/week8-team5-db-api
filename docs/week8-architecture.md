@@ -223,6 +223,7 @@ build/bin/sqlapi_server
 - 서비스 결과를 HTTP 응답으로 변환
 - `GET /health`의 body 금지 규칙 적용
 - `GET /` HTML 페이지 반환
+- `GET /`에서만 사용하는 브라우저 편의 명령(help 계열) 처리
 
 비책임:
 
@@ -622,9 +623,11 @@ request line + header 크기 한도는 `8 KiB`이며, 계산 규칙은 다음과
 
 - `GET /health` 정상 응답
 - `GET /` 정상 HTML 응답
+- `GET /`의 브라우저 help 명령이 로컬에서 처리되고 `POST /query`로 내려가지 않는지 확인
 - `POST /query` 정상 `SELECT`
 - `POST /query` 정상 `INSERT`
 - `POST /query` 응답의 `output`이 LF 줄바꿈을 유지하고 JSON 직렬화/역직렬화 후에도 깨지지 않는지 확인
+- 결과 행 수가 많은 `SELECT`도 성공 응답으로 반환되는지 확인
 - alias table name과 storage file name이 달라도 같은 물리 테이블 락을 공유하는지 확인
 - 같은 테이블 동시 `INSERT`에서 `id` 중복이 없는지 확인
 - 같은 테이블 동시 read/write에서 정합성이 깨지지 않는지 확인

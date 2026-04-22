@@ -5,6 +5,39 @@
 #include <stdlib.h>
 #include <string.h>
 
+static char *build_success_body(const SqlEngineAdapterResult *result, const char *escaped_summary, const char *escaped_output) {
+    int required = snprintf(NULL,
+                            0,
+                            "{\"ok\":true,\"statement_type\":\"%s\",\"affected_rows\":%d,"
+                            "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f}",
+                            result->statement_type,
+                            result->affected_rows,
+                            escaped_summary,
+                            escaped_output,
+                            result->elapsed_ms);
+    char *body;
+
+    if (required < 0) {
+        return NULL;
+    }
+
+    body = (char *)malloc((size_t)required + 1);
+    if (body == NULL) {
+        return NULL;
+    }
+
+    snprintf(body,
+             (size_t)required + 1,
+             "{\"ok\":true,\"statement_type\":\"%s\",\"affected_rows\":%d,"
+             "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f}",
+             result->statement_type,
+             result->affected_rows,
+             escaped_summary,
+             escaped_output,
+             result->elapsed_ms);
+    return body;
+}
+
 static const char *skip_ws(const char *text) {
     while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') {
         text++;
@@ -232,8 +265,8 @@ int api_handle_query(const HttpRequest *request, const ApiContext *context, Http
     SqlEngineAdapterResult result;
     char *escaped_summary = NULL;
     char *escaped_output = NULL;
-    char body[4096];
-    int written;
+    char *body = NULL;
+    int ok;
 
     if (content_length == NULL) {
         return http_response_set_error(response,
@@ -287,21 +320,16 @@ int api_handle_query(const HttpRequest *request, const ApiContext *context, Http
         return 0;
     }
 
-    written = snprintf(body,
-                       sizeof(body),
-                       "{\"ok\":true,\"statement_type\":\"%s\",\"affected_rows\":%d,"
-                       "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f}",
-                       result.statement_type,
-                       result.affected_rows,
-                       escaped_summary,
-                       escaped_output,
-                       result.elapsed_ms);
+    body = build_success_body(&result, escaped_summary, escaped_output);
     free(escaped_summary);
     free(escaped_output);
-    sql_engine_adapter_result_free(&result);
-    if (written < 0 || (size_t)written >= sizeof(body)) {
+    if (body == NULL) {
+        sql_engine_adapter_result_free(&result);
         return 0;
     }
 
-    return http_response_set_json(response, 200, body);
+    ok = http_response_set_json(response, 200, body);
+    free(body);
+    sql_engine_adapter_result_free(&result);
+    return ok;
 }
