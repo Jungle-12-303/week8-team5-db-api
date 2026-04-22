@@ -195,6 +195,20 @@ static int expect_contains(const char *response, const char *needle, const char 
     return 1;
 }
 
+static int expect_error_response(const char *response,
+                                 const char *status_line,
+                                 const char *error_code,
+                                 const char *name_prefix) {
+    char status_name[128];
+    char code_name[128];
+
+    snprintf(status_name, sizeof(status_name), "%s status", name_prefix);
+    snprintf(code_name, sizeof(code_name), "%s error code", name_prefix);
+
+    return expect_contains(response, status_line, status_name) &&
+           expect_contains(response, error_code, code_name);
+}
+
 int run_api_server_tests(void) {
     char root[160];
     char schema_dir[192];
@@ -209,6 +223,7 @@ int run_api_server_tests(void) {
     int port = allocate_test_port();
     int failures = 0;
     const char *json_body = "{\"sql\":\"SELECT name FROM users WHERE age = 20;\"}";
+    const char *missing_sql_body = "{\"foo\":\"bar\"}";
 
     if (port == 0) {
         fprintf(stderr, "[FAIL] allocate API server test port\n");
@@ -260,6 +275,24 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "\"status\":\"ok\"", "GET /health returns ok status");
     }
 
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET /health HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Content-Length: 2\r\n"
+                           "\r\n"
+                           "{}",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET /health with body\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"INVALID_JSON\"",
+                                           "GET /health with body");
+    }
+
     snprintf(request,
              sizeof(request),
              "POST /query HTTP/1.1\r\n"
@@ -279,6 +312,65 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "Alice", "POST /query returns SELECT output");
     }
 
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: text/plain\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen(json_body),
+             json_body);
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with invalid Content-Type\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"INVALID_CONTENT_TYPE\"",
+                                           "POST /query with invalid Content-Type");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "POST /query HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Content-Type: application/json\r\n"
+                           "Content-Length: 10\r\n"
+                           "\r\n"
+                           "{\"sql\":123",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with invalid JSON\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"INVALID_JSON\"",
+                                           "POST /query with invalid JSON");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen(missing_sql_body),
+             missing_sql_body);
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query without sql field\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"MISSING_SQL_FIELD\"",
+                                           "POST /query without sql field");
+    }
+
     if (!send_http_request("127.0.0.1",
                            port,
                            "POST /query HTTP/1.1\r\n"
@@ -293,6 +385,55 @@ int run_api_server_tests(void) {
     } else {
         failures += !expect_contains(response, "HTTP/1.1 411 Length Required", "POST /query without Content-Length returns 411");
         failures += !expect_contains(response, "\"code\":\"CONTENT_LENGTH_REQUIRED\"", "POST /query without Content-Length returns correct error code");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET /query HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET /query\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 405 Method Not Allowed",
+                                           "\"code\":\"METHOD_NOT_ALLOWED\"",
+                                           "GET /query");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "GET /missing HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send GET /missing\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 404 Not Found",
+                                           "\"code\":\"NOT_FOUND\"",
+                                           "GET /missing");
+    }
+
+    if (!send_http_request("127.0.0.1",
+                           port,
+                           "POST /query HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Transfer-Encoding: chunked\r\n"
+                           "Content-Type: application/json\r\n"
+                           "\r\n"
+                           "4\r\n"
+                           "test\r\n"
+                           "0\r\n\r\n",
+                           response,
+                           sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with chunked encoding\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 501 Not Implemented",
+                                           "\"code\":\"CHUNKED_NOT_SUPPORTED\"",
+                                           "POST /query with chunked encoding");
     }
 
     sqlapi_server_request_shutdown(server);
