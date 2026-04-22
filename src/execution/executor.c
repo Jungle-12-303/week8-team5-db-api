@@ -398,23 +398,23 @@ static int select_row_buffer_push(SelectRowBuffer *buffer, const StringList *fie
     return 1;
 }
 
-/* 단순 문자열 길이를 기준으로 각 컬럼의 출력 폭을 계산한다. */
+/* UTF-8 표시 폭을 기준으로 각 컬럼의 출력 폭을 계산한다. */
 static void compute_table_widths(const StringList *headers, const SelectRowBuffer *rows, int *column_widths) {
     int column_index;
     int row_index;
-    size_t width;
+    int width;
 
     for (column_index = 0; column_index < headers->count; column_index++) {
-        /* 처음에는 헤더 길이를 최소 너비로 잡는다. */
-        column_widths[column_index] = (int)strlen(headers->items[column_index]);
+        /* 처음에는 헤더의 실제 표시 폭을 최소 너비로 잡는다. */
+        column_widths[column_index] = utf8_display_width(headers->items[column_index]);
     }
 
     for (row_index = 0; row_index < rows->count; row_index++) {
         for (column_index = 0; column_index < headers->count; column_index++) {
-            /* 데이터 셀이 더 길면 그 길이에 맞춰 폭을 넓힌다. */
-            width = strlen(rows->rows[row_index].items[column_index]);
-            if ((int)width > column_widths[column_index]) {
-                column_widths[column_index] = (int)width;
+            /* 데이터 셀이 더 넓게 보이면 그 표시 폭에 맞춰 폭을 넓힌다. */
+            width = utf8_display_width(rows->rows[row_index].items[column_index]);
+            if (width > column_widths[column_index]) {
+                column_widths[column_index] = width;
             }
         }
     }
@@ -439,13 +439,13 @@ static void print_table_border(FILE *out, const int *column_widths, int column_c
 static void print_table_row(FILE *out, const StringList *row, const int *column_widths) {
     int column_index;
     int padding;
-    size_t cell_width;
+    int cell_width;
 
     fputc('|', out);
     for (column_index = 0; column_index < row->count; column_index++) {
         fprintf(out, " %s", row->items[column_index]);
-        cell_width = strlen(row->items[column_index]);
-        padding = column_widths[column_index] - (int)cell_width;
+        cell_width = utf8_display_width(row->items[column_index]);
+        padding = column_widths[column_index] - cell_width;
         while (padding-- > 0) {
             fputc(' ', out);
         }

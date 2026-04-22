@@ -19,6 +19,80 @@
 // strlen, memcpy 같은 문자열 함수를 쓰기 위해 포함한다.
 #include <string.h>
 
+static int utf8_decode_codepoint(const char *text, unsigned int *codepoint_out, int *bytes_out) {
+    const unsigned char *bytes = (const unsigned char *)text;
+
+    if (bytes[0] < 0x80) {
+        *codepoint_out = bytes[0];
+        *bytes_out = 1;
+        return 1;
+    }
+
+    if ((bytes[0] & 0xE0) == 0xC0 &&
+        (bytes[1] & 0xC0) == 0x80) {
+        *codepoint_out = ((unsigned int)(bytes[0] & 0x1F) << 6) |
+                         (unsigned int)(bytes[1] & 0x3F);
+        *bytes_out = 2;
+        return 1;
+    }
+
+    if ((bytes[0] & 0xF0) == 0xE0 &&
+        (bytes[1] & 0xC0) == 0x80 &&
+        (bytes[2] & 0xC0) == 0x80) {
+        *codepoint_out = ((unsigned int)(bytes[0] & 0x0F) << 12) |
+                         ((unsigned int)(bytes[1] & 0x3F) << 6) |
+                         (unsigned int)(bytes[2] & 0x3F);
+        *bytes_out = 3;
+        return 1;
+    }
+
+    if ((bytes[0] & 0xF8) == 0xF0 &&
+        (bytes[1] & 0xC0) == 0x80 &&
+        (bytes[2] & 0xC0) == 0x80 &&
+        (bytes[3] & 0xC0) == 0x80) {
+        *codepoint_out = ((unsigned int)(bytes[0] & 0x07) << 18) |
+                         ((unsigned int)(bytes[1] & 0x3F) << 12) |
+                         ((unsigned int)(bytes[2] & 0x3F) << 6) |
+                         (unsigned int)(bytes[3] & 0x3F);
+        *bytes_out = 4;
+        return 1;
+    }
+
+    *codepoint_out = bytes[0];
+    *bytes_out = 1;
+    return 0;
+}
+
+static int unicode_display_width(unsigned int codepoint) {
+    if (codepoint == 0) {
+        return 0;
+    }
+
+    if ((codepoint >= 0x0300 && codepoint <= 0x036F) ||
+        (codepoint >= 0x1AB0 && codepoint <= 0x1AFF) ||
+        (codepoint >= 0x1DC0 && codepoint <= 0x1DFF) ||
+        (codepoint >= 0x20D0 && codepoint <= 0x20FF) ||
+        (codepoint >= 0xFE20 && codepoint <= 0xFE2F)) {
+        return 0;
+    }
+
+    if ((codepoint >= 0x1100 && codepoint <= 0x115F) ||
+        (codepoint >= 0x2329 && codepoint <= 0x232A) ||
+        (codepoint >= 0x2E80 && codepoint <= 0xA4CF) ||
+        (codepoint >= 0xAC00 && codepoint <= 0xD7A3) ||
+        (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||
+        (codepoint >= 0xFE10 && codepoint <= 0xFE19) ||
+        (codepoint >= 0xFE30 && codepoint <= 0xFE6F) ||
+        (codepoint >= 0xFF00 && codepoint <= 0xFF60) ||
+        (codepoint >= 0xFFE0 && codepoint <= 0xFFE6) ||
+        (codepoint >= 0x1F300 && codepoint <= 0x1FAFF) ||
+        (codepoint >= 0x20000 && codepoint <= 0x3FFFD)) {
+        return 2;
+    }
+
+    return 1;
+}
+
 /* 파일 전체를 읽어 하나의 C 문자열로 반환한다. */
 char *read_entire_file(const char *path, char *error, size_t error_size) {
     // 읽을 파일 핸들이다.
@@ -319,4 +393,23 @@ void format_system_error(char *error, size_t error_size, const char *action, con
     }
 
     snprintf(error, error_size, "%s '%s': %s", action, path, reason);
+}
+
+int utf8_display_width(const char *text) {
+    int width = 0;
+
+    if (text == NULL) {
+        return 0;
+    }
+
+    while (*text != '\0') {
+        unsigned int codepoint;
+        int bytes;
+
+        utf8_decode_codepoint(text, &codepoint, &bytes);
+        width += unicode_display_width(codepoint);
+        text += bytes;
+    }
+
+    return width;
 }

@@ -72,4 +72,7 @@ int parse_int_strict(const char *text, int *value);
  */
 void format_system_error(char *error, size_t error_size, const char *action, const char *path);
 
+/* UTF-8 문자열이 표에서 차지하는 표시 폭을 계산한다. */
+int utf8_display_width(const char *text);
+
 #endif

@@ -554,6 +554,50 @@ static void test_select_execution_with_general_where(void) {
     free_statement(&statement);
 }
 
+static void test_select_execution_with_utf8_display_width(void) {
+    char root[128];
+    char schema_dir[160];
+    char data_dir[160];
+    char schema_path[192];
+    char data_path[192];
+    char output_path[192];
+    char error[256];
+    char *output_text;
+    Statement statement = {0};
+    ExecResult result;
+    FILE *output_file;
+
+    reset_runtime_state();
+    expect_true(create_test_dirs(root, sizeof(root), schema_dir, sizeof(schema_dir), data_dir, sizeof(data_dir)), "create UTF-8 width SELECT test directories");
+    build_child_path(schema_path, sizeof(schema_path), schema_dir, "users.meta");
+    build_child_path(data_path, sizeof(data_path), data_dir, "users.csv");
+    build_child_path(output_path, sizeof(output_path), root, "select_utf8_width_output.txt");
+    expect_true(write_text_file(schema_path, "table=users\ncolumns=name,age\n"), "write UTF-8 width schema");
+    expect_true(write_text_file(data_path, "name,age\nname_101010,25\n정영훈,25\n"), "write UTF-8 width CSV");
+    expect_true(load_statement("SELECT name FROM users WHERE age = 25;", &statement), "build UTF-8 width SELECT");
+
+    output_file = fopen(output_path, "wb");
+    expect_true(output_file != NULL, "open output file for UTF-8 width SELECT");
+    if (output_file == NULL) {
+        free_statement(&statement);
+        return;
+    }
+
+    result = execute_statement(&statement, schema_dir, data_dir, output_file);
+    fclose(output_file);
+    expect_true(result.ok, "execute UTF-8 width SELECT");
+    output_text = read_entire_file(output_path, error, sizeof(error));
+    expect_true(output_text != NULL, "read UTF-8 width SELECT output");
+    if (output_text != NULL) {
+        expect_true(strstr(output_text, "+-------------+") != NULL, "UTF-8 width SELECT prints widened border");
+        expect_true(strstr(output_text, "| name        |") != NULL, "UTF-8 width SELECT prints padded header");
+        expect_true(strstr(output_text, "| name_101010 |") != NULL, "UTF-8 width SELECT aligns ASCII row");
+        expect_true(strstr(output_text, "| 정영훈      |") != NULL, "UTF-8 width SELECT aligns Korean row");
+        free(output_text);
+    }
+    free_statement(&statement);
+}
+
 static void test_select_execution_with_id_index(void) {
     char root[128];
     char schema_dir[160];
@@ -1145,6 +1189,7 @@ int main(void) {
     test_insert_auto_id();
     test_insert_overrides_user_id();
     test_select_execution_with_general_where();
+    test_select_execution_with_utf8_display_width();
     test_select_execution_with_id_index();
     test_select_explicit_internal_id_column();
     test_select_star_hides_internal_id_column();
