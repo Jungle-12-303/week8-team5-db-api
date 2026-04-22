@@ -12,6 +12,12 @@ build/
 *.dylib
 *.lib
 
+
+# data는 공유할 필요 없을 듯
+data
+student.csv
+product.csv
+
 # Logs and temporary files
 *.log
 *.tmp
