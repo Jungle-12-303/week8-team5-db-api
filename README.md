@@ -3,6 +3,7 @@
 ## 1. 프로젝트 개요
 
 이 저장소는 8주차 수요 코딩회 과제인 `미니 DBMS - API 서버` 구현 결과물입니다.
+현재 구현은 8주차 과제 범위에 맞춘 최소 구현입니다.
 
 이번 구현의 핵심 목표는 다음과 같습니다.
 
@@ -23,13 +24,16 @@
 
 ## 2. 요구사항 대응 요약
 
-- `기존 SQL 처리기 재사용`: 기존 `lexer`, `parser`, `executor`, `storage`, `index` 계층을 그대로 내부 엔진으로 사용합니다.
-- `B+ 트리 인덱스 재사용`: `WHERE id = ...` 조회와 lazy rebuild 경로를 기존 인덱스 레이어 위에서 유지합니다.
-- `API 서버 제공`: `HTTP/1.1 over TCP` 기반으로 `GET /`, `GET /health`, `POST /query`를 제공합니다.
-- `스레드 풀`: 연결은 accept thread가 받고, worker thread가 실제 SQL 요청을 처리합니다.
-- `병렬 SQL 처리`: 서로 다른 테이블은 병렬 처리하고, 같은 물리 테이블은 `storage_name` 기준으로 직렬화합니다.
-- `엣지 케이스 처리`: 잘못된 헤더, JSON 오류, SQL 오류, body/header 한도 초과, `chunked` 미지원, queue full을 명시적으로 처리합니다.
-- `테스트`: 엔진 회귀 테스트, CLI 테스트, API 통합 테스트를 하나의 테스트 타깃으로 통합했습니다.
+| 공지 요구사항 | 구현/설계 대응 | 근거 |
+| --- | --- | --- |
+| 구현한 API를 통해 외부 클라이언트에서 DBMS 기능을 사용할 수 있어야 합니다. | `HTTP/1.1 over TCP` 기반으로 `GET /`, `GET /health`, `POST /query`를 제공하고, 브라우저 진입 페이지는 SQL을 입력받아 `POST /query`를 호출하고 결과를 표시하는 얇은 프론트엔드로 구성했습니다. | `docs/week8-api-spec.md`, `src/api/`, `src/http/` |
+| 스레드 풀(Thread Pool)을 구성하고, 요청이 들어올 때마다 스레드를 할당하여 SQL 요청을 병렬로 처리해야 합니다. | `accept loop + bounded queue + worker thread pool` 구조를 사용하고, accept thread가 연결을 큐에 적재한 뒤 worker가 요청 하나를 처리하는 `1 connection = 1 request` 모델로 운영합니다. | `docs/week8-architecture.md`, `src/server/server.c`, `src/server/task_queue.c`, `src/server/worker_pool.c` |
+| 이전 차수에서 구현한 SQL 처리기와 B+ 트리 인덱스를 그대로 활용하여 내부 DB 엔진을 구성합니다. | 기존 `lexer`, `parser`, `executor`, `storage`, `index` 계층을 내부 엔진으로 재사용하고, API 서버는 `sql_engine_adapter`와 `db_service`를 통해 기존 엔진 바깥에 얹었습니다. | `docs/week8-requirements.md`, `docs/week8-architecture.md`, `src/sql/`, `src/execution/`, `src/storage/`, `src/index/`, `src/engine/sql_engine_adapter.c` |
+| 이전 차수에서 구현한 SQL 처리기와 B+ 트리 인덱스를 그대로 활용하여 내부 DB 엔진을 구성합니다. | 기존 B+ 트리 인덱스를 활용하는 조회 경로를 API 서버 환경에서도 유지합니다. 현재 구현에서는 `WHERE id = ...` 조회가 인덱스 경로를 사용하고, 필요 시 기존 index 계층의 CSV 기반 rebuild 복구 흐름을 그대로 따릅니다. | `docs/week8-requirements.md`, `docs/week8-architecture.md`, `src/index/table_index.c`, `src/execution/executor.c` |
+| 멀티 스레드 동시성 이슈를 고려해야 합니다. | 서로 다른 테이블은 병렬 처리하고, 같은 물리 테이블은 `schema.storage_name` 기준 `table-level exclusive lock`으로 직렬화합니다. 전역 인덱스 레지스트리는 별도 `registry_mutex`로 보호합니다. | `docs/week8-architecture.md`, `src/engine/engine_lock_manager.c`, `src/index/table_index.c` |
+| API 서버 아키텍쳐와 내부 DB 엔진과 외부 API 서버 사이 연결을 설계해야 합니다. | `client -> server -> http -> api -> service -> engine adapter -> sql/execution/storage/index` 계층 구조를 유지하고, controller 성격의 API 계층이 저장소를 직접 건드리지 않도록 분리했습니다. | `docs/week8-architecture.md`, `README 3장`, `src/api/`, `src/service/`, `src/engine/` |
+| 단위 테스트, API 기능 테스트, 엣지 케이스를 최대한 고려해야 합니다. | 엔진 회귀 테스트, CLI 테스트, API 통합 테스트를 하나의 테스트 타깃으로 운영하고, HTTP 형식 오류, SQL 오류, queue full, shutdown, 재시작 복구, 경계값 통과/초과를 자동 검증합니다. | `docs/week8-test-plan.md`, `tests/test_runner.c`, `tests/test_api_server.c` |
+| 발표자료는 따로 만들지 않고, README.md를 기준으로 설명합니다. | README에 구조, 실행 방법, 테스트 범위, 예외 처리, 데이터 흐름, 다이어그램을 모아 발표용 문서 역할을 하도록 구성했습니다. | `README.md`, `docs/images/` |
 
 ## 3. 시스템 구조
 
@@ -45,6 +49,25 @@ client
   -> sql / execution
   -> storage / index
 ```
+
+이 구조는 “브라우저나 curl이 보낸 요청이 어디를 어떻게 거쳐서 SQL 실행까지 내려가는가”를 층별로 단순화해서 그린 것입니다. 
+
+각 계층은 자기 책임만 수행한 뒤 요청을 아래로 넘기고, 결과는 다시 위로 올립니다.
+
+```
+client는 외부 호출자입니다. 브라우저, curl, 테스트 코드가 여기에 해당합니다. 이 계층은 HTTP 요청을 만들고 응답을 받는 역할만 합니다. 내부적으로 SQL 파서나 CSV 파일을 직접 알 필요는 없습니다.
+
+server는 네트워크 런타임 계층입니다. 소켓을 열고 bind/listen/accept를 수행하고, 들어온 연결을 작업 큐에 넣고, worker thread가 그 연결을 처리하게 만듭니다. 즉 “연결을 받고 분배하는 곳”입니다. 여기서는 SQL을 해석하지 않고, 요청 1건을 처리 가능한 실행 문맥으로 넘기는 데 집중합니다. 관련 코드는 src/server/server.c입니다.
+
+http는 HTTP 프로토콜 처리 계층입니다. 서버가 받은 바이트 스트림을 HTTP/1.1 요청으로 파싱하고, request line, header, body, Content-Length, Content-Type 같은 형식 검증을 수행합니다. 반대로 응답을 보낼 때는 상태 코드, 헤더, JSON/HTML body를 조립합니다. 즉 “네트워크 바이트를 HTTP 의미 구조로 바꾸는 계층”입니다. 관련 코드는 src/http/http_request.c, src/http/http_response.c, src/http/router.c입니다.
+
+api는 엔드포인트별 요청 처리 계층입니다. 예를 들어 GET /, GET /health, POST /query가 각각 어떤 동작을 해야 하는지 여기서 갈립니다. 중요한 점은 이 계층이 비즈니스 로직을 직접 처리하지 않는다는 것입니다. POST /query라면 JSON에서 sql 필드를 꺼내고, 잘못된 입력이면 적절한 오류를 만들고, 정상 입력이면 서비스 계층으로 넘깁니다. 즉 “HTTP 엔드포인트를 애플리케이션 동작으로 연결하는 계층”입니다. 관련 코드는 src/api/root_handler.c, src/api/health_handler.c, src/api/query_handler.c입니다.
+
+service는 API와 엔진 사이의 얇은 경계입니다. 현재 구현에서는 로직이 많지 않고 거의 위임만 하지만, 이 계층이 있기 때문에 API 핸들러가 엔진 세부 구조를 직접 알 필요가 없습니다. 나중에 정책 추가나 인증, 요청 추적, 공통 전처리 같은 것이 늘어나더라도 API 계층을 덜 건드리고 확장할 수 있습니다. 즉 “API 계층이 엔진에 직접 달라붙지 않게 하는 완충 지점”입니다. 관련 코드는 src/service/db_service.c입니다.
+
+engine adapter는 API 서버 세계와 기존 SQL 엔진 세계를 연결하는 핵심 번역기입니다. 여기서 SQL 길이 검증, lexer/parser 호출, 대상 테이블 추출, load_schema() 호출, schema.storage_name 기준 락 획득, executor 실행, 출력 캡처, 오류 코드 분류가 일어납니다. 즉 “기존 7주차 엔진을 API 서버에서 안전하게 재사용할 수 있게 감싸는 계층”입니다. 관련 코드는 src/engine/sql_engine_adapter.c입니다.
+```
+
 
 ### 3.2 계층별 역할
 
@@ -163,7 +186,7 @@ client
 
 ### 8.1 `GET /`
 
-브라우저에서 `http://127.0.0.1:8080/`로 접근하면 SQL 입력창과 결과 출력 패널이 있는 진입 페이지가 열립니다. 이 페이지는 내부적으로 기존 `POST /query`를 호출하는 얇은 프론트엔드입니다.
+브라우저에서 `http://127.0.0.1:8080/`로 접근하면 SQL 입력과 결과 확인을 위한 진입 페이지가 열립니다. 이 페이지는 입력한 SQL을 내부적으로 `POST /query`로 보내고, 응답 결과를 화면에 표시하는 브라우저용 얇은 프론트엔드입니다.
 
 ### 8.2 `GET /health`
 
@@ -231,7 +254,7 @@ Content-Length: 47
   "ok": false,
   "error": {
     "code": "UNSUPPORTED_SQL",
-    "message": "only INSERT and SELECT are supported"
+    "message": "SQL must start with SELECT or INSERT. Check the first keyword for a typo."
   }
 }
 ```
@@ -417,10 +440,8 @@ week7-reference-docs/     7주차 참고 문서
 - request id / trace id
 - richer metrics endpoint
 
-## 14. 발표 시 설명 포인트
+## 14. 핵심 포인트
 
-발표에서는 아래 세 가지를 중심으로 설명하면 전달력이 좋습니다.
-
-- 7주차 SQL 처리기와 B+ 트리를 버리지 않고, API 서버 바깥 계층만 추가해 재사용했다는 점
-- 스레드 풀로 병렬성을 확보하되, 같은 물리 테이블은 `storage_name` 기준 락으로 정합성을 지켰다는 점
-- README, API 명세, 테스트 계획, 자동 테스트 결과가 서로 연결되어 있어 기능과 한계를 재현 가능하게 검증할 수 있다는 점
+- 7주차 SQL 처리기와 B+ 트리를 버리지 않고, API 서버 바깥 계층만 추가해 재사용했습니다.
+- 스레드 풀로 병렬성을 확보하되, 같은 물리 테이블은 `storage_name` 기준 락으로 정합성을 지켰습니다.
+- README, API 명세, 테스트 계획, 자동 테스트 결과가 서로 연결되어 있어 기능과 한계를 재현 가능하게 검증할 수 있습니다.

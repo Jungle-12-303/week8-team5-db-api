@@ -258,6 +258,51 @@ static int is_valid_query_content_type(const char *content_type) {
     return valid;
 }
 
+static void build_user_error_message(SqlEngineErrorCode code,
+                                     const char *original,
+                                     char *buffer,
+                                     size_t buffer_size) {
+    const char *message = original != NULL ? original : "request failed";
+
+    switch (code) {
+        case SQL_ENGINE_ERROR_UNSUPPORTED_SQL:
+            if (strstr(message, "only INSERT and SELECT are supported") != NULL) {
+                snprintf(buffer,
+                         buffer_size,
+                         "SQL must start with SELECT or INSERT. Check the first keyword for a typo.");
+                return;
+            }
+            break;
+        case SQL_ENGINE_ERROR_SQL_PARSE_ERROR:
+            if (strstr(message, "expected identifier") != NULL ||
+                strstr(message, "expected keyword") != NULL) {
+                snprintf(buffer,
+                         buffer_size,
+                         "SQL syntax is invalid. Check that required table and column names are present.");
+                return;
+            }
+            break;
+        case SQL_ENGINE_ERROR_INVALID_SQL_ARGUMENT:
+            if (strstr(message, "WHERE id value must be an integer") != NULL) {
+                snprintf(buffer,
+                         buffer_size,
+                         "WHERE id = ... requires an integer value.");
+                return;
+            }
+            if (strstr(message, "SQL statement must not be blank") != NULL) {
+                snprintf(buffer,
+                         buffer_size,
+                         "SQL statement must not be blank. Enter a SELECT or INSERT statement.");
+                return;
+            }
+            break;
+        default:
+            break;
+    }
+
+    snprintf(buffer, buffer_size, "%s", message);
+}
+
 int api_handle_query(const HttpRequest *request, const ApiContext *context, HttpResponse *response) {
     const char *content_type = http_request_get_header(request, "Content-Type");
     const char *content_length = http_request_get_header(request, "Content-Length");
@@ -266,6 +311,7 @@ int api_handle_query(const HttpRequest *request, const ApiContext *context, Http
     char *escaped_summary = NULL;
     char *escaped_output = NULL;
     char *body = NULL;
+    char user_message[256];
     int ok;
 
     if (content_length == NULL) {
@@ -306,7 +352,8 @@ int api_handle_query(const HttpRequest *request, const ApiContext *context, Http
     free(sql);
 
     if (!result.ok) {
-        int ok = http_response_set_error(response, result.error_code, result.error_message);
+        build_user_error_message(result.error_code, result.error_message, user_message, sizeof(user_message));
+        int ok = http_response_set_error(response, result.error_code, user_message);
         sql_engine_adapter_result_free(&result);
         return ok;
     }

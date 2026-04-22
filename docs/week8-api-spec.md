@@ -392,6 +392,7 @@ Content-Type: application/json; charset=utf-8
 - `ok`: 실패 시 `false`
 - `error.code`: 기계 판독용 오류 코드
 - `error.message`: 사람이 읽을 수 있는 상세 설명
+- 브라우저 루트 페이지(`GET /`)는 이 값을 그대로 표시하되, 필요하면 `error.code`와 함께 추가 안내 문구를 덧붙일 수 있다.
 
 ### 11.3 대표 오류 사례
 
@@ -435,7 +436,7 @@ Content-Type: application/json; charset=utf-8
   "ok": false,
   "error": {
     "code": "UNSUPPORTED_SQL",
-    "message": "only INSERT and SELECT are supported"
+    "message": "SQL must start with SELECT or INSERT. Check the first keyword for a typo."
   }
 }
 ```

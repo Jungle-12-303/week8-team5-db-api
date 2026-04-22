@@ -1377,6 +1377,7 @@ int run_api_server_tests(void) {
         failures += !expect_contains(response, "POST /query", "GET / documents query endpoint");
         failures += !expect_contains(response, "textarea id=\"sql-input\"", "GET / returns SQL input console");
         failures += !expect_contains(response, "help, .help, --help", "GET / documents browser help commands");
+        failures += !expect_contains(response, "SELECT 또는 INSERT로 시작해야 합니다.", "GET / includes browser error hint text");
     }
 
     if (!send_http_request("127.0.0.1",
@@ -1497,6 +1498,29 @@ int run_api_server_tests(void) {
         failures += !expect_not_contains(response, "\\r\\n| 1  | Alice |", "POST /query row output does not serialize CRLF escapes");
         failures += !expect_not_contains(response, "\r\n| id | name |", "POST /query JSON body does not contain raw CRLF row separators");
         failures += !expect_not_contains(response, "\r\n| 1  | Alice |", "POST /query JSON body rows are not split by raw CRLF");
+    }
+
+    snprintf(request,
+             sizeof(request),
+             "POST /query HTTP/1.1\r\n"
+             "Host: 127.0.0.1\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Length: %zu\r\n"
+             "\r\n"
+             "%s",
+             strlen("{\"sql\":\"SELEC name FROM users;\"}"),
+             "{\"sql\":\"SELEC name FROM users;\"}");
+    if (!send_http_request("127.0.0.1", port, request, response, sizeof(response))) {
+        fprintf(stderr, "[FAIL] send POST /query with mistyped SELECT keyword\n");
+        failures++;
+    } else {
+        failures += !expect_error_response(response,
+                                           "HTTP/1.1 400 Bad Request",
+                                           "\"code\":\"UNSUPPORTED_SQL\"",
+                                           "POST /query with mistyped SELECT keyword");
+        failures += !expect_contains(response,
+                                     "SQL must start with SELECT or INSERT. Check the first keyword for a typo.",
+                                     "POST /query with mistyped SELECT keyword returns user-friendly message");
     }
 
     snprintf(request,
