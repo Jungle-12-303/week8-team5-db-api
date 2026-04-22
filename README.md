@@ -185,7 +185,8 @@ HTTP 형식 오류나 queue full 같은 예외는 가능한 한 앞단에서 바
   "affected_rows": 1,
   "summary": "SELECT 1",
   "output": "+----+------+\n| id | name |\n+----+------+\n| 1  | Alice |\n+----+------+\n",
-  "elapsed_ms": 0.42
+  "elapsed_ms": 0.42,
+  "wall_elapsed_ms": 0.58
 }
 ```
 
@@ -198,7 +199,8 @@ HTTP 형식 오류나 queue full 같은 예외는 가능한 한 앞단에서 바
   "affected_rows": 1,
   "summary": "INSERT 1",
   "output": "",
-  "elapsed_ms": 0.31
+  "elapsed_ms": 0.31,
+  "wall_elapsed_ms": 0.33
 }
 ```
 

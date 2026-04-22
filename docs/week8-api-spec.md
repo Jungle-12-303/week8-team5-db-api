@@ -332,7 +332,8 @@ Content-Type: application/json; charset=utf-8
   "affected_rows": 1,
   "summary": "SELECT 1",
   "output": "+----+------+\n| id | name |\n+----+------+\n| 1  | Alice |\n+----+------+\n",
-  "elapsed_ms": 0.42
+  "elapsed_ms": 0.42,
+  "wall_elapsed_ms": 0.58
 }
 ```
 
@@ -348,7 +349,8 @@ Content-Type: application/json; charset=utf-8
   "affected_rows": 1,
   "summary": "INSERT 1",
   "output": "",
-  "elapsed_ms": 0.31
+  "elapsed_ms": 0.31,
+  "wall_elapsed_ms": 0.33
 }
 ```
 
@@ -359,7 +361,8 @@ Content-Type: application/json; charset=utf-8
 - `affected_rows`: 영향받은 행 수
 - `summary`: 엔진 요약 메시지. 예: `SELECT 1`, `INSERT 1`
 - `output`: executor가 생성한 출력 문자열
-- `elapsed_ms`: 요청 처리 시간 밀리초 단위 값
+- `elapsed_ms`: CPU 사용 시간 기준 내부 실행 시간 밀리초 단위 값
+- `wall_elapsed_ms`: 실제 경과 시간 기준 밀리초 단위 값
 
 ### 10.4 `output` 필드 의미
 

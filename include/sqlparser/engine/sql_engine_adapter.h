@@ -43,6 +43,7 @@ typedef struct {
     char summary[256];
     char *output;
     double elapsed_ms;
+    double wall_elapsed_ms;
     SqlEngineErrorCode error_code;
     char error_message[256];
 } SqlEngineAdapterResult;

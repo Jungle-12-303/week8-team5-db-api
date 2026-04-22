@@ -9,12 +9,13 @@ static char *build_success_body(const SqlEngineAdapterResult *result, const char
     int required = snprintf(NULL,
                             0,
                             "{\"ok\":true,\"statement_type\":\"%s\",\"affected_rows\":%d,"
-                            "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f}",
+                            "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f,\"wall_elapsed_ms\":%.3f}",
                             result->statement_type,
                             result->affected_rows,
                             escaped_summary,
                             escaped_output,
-                            result->elapsed_ms);
+                            result->elapsed_ms,
+                            result->wall_elapsed_ms);
     char *body;
 
     if (required < 0) {
@@ -29,12 +30,13 @@ static char *build_success_body(const SqlEngineAdapterResult *result, const char
     snprintf(body,
              (size_t)required + 1,
              "{\"ok\":true,\"statement_type\":\"%s\",\"affected_rows\":%d,"
-             "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f}",
+             "\"summary\":\"%s\",\"output\":\"%s\",\"elapsed_ms\":%.3f,\"wall_elapsed_ms\":%.3f}",
              result->statement_type,
              result->affected_rows,
              escaped_summary,
              escaped_output,
-             result->elapsed_ms);
+             result->elapsed_ms,
+             result->wall_elapsed_ms);
     return body;
 }
 

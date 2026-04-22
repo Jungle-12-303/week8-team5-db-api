@@ -1,3 +1,9 @@
+#ifndef _WIN32
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+#endif
+
 #include "sqlparser/engine/sql_engine_adapter.h"
 
 #include "sqlparser/common/util.h"
@@ -65,6 +71,17 @@ static void sleep_for_test_delay(int delay_ms) {
     Sleep((DWORD)delay_ms);
 #else
     usleep((useconds_t)delay_ms * 1000U);
+#endif
+}
+
+static double monotonic_time_ms(void) {
+#ifdef _WIN32
+    return (double)GetTickCount64();
+#else
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
 #endif
 }
 
@@ -203,7 +220,8 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
     ExecResult exec_result;
     EngineTableLockHandle lock_handle = {0};
     FILE *output_stream = NULL;
-    clock_t started;
+    clock_t started_cpu;
+    double started_wall_ms;
     int lock_acquired = 0;
 
     memset(result, 0, sizeof(*result));
@@ -219,7 +237,8 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
         return 1;
     }
 
-    started = clock();
+    started_cpu = clock();
+    started_wall_ms = monotonic_time_ms();
 
     if (!lex_sql(sql, &tokens, result->error_message, sizeof(result->error_message))) {
         set_error(result, SQL_ENGINE_ERROR_SQL_LEX_ERROR, result->error_message);
@@ -306,7 +325,8 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
         }
     }
 
-    result->elapsed_ms = ((double)(clock() - started) / (double)CLOCKS_PER_SEC) * 1000.0;
+    result->elapsed_ms = ((double)(clock() - started_cpu) / (double)CLOCKS_PER_SEC) * 1000.0;
+    result->wall_elapsed_ms = monotonic_time_ms() - started_wall_ms;
 
 cleanup:
     if (output_stream != NULL) {
