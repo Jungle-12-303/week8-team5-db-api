@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="520" viewBox="0 0 1400 520" role="img" aria-labelledby="title desc">
+  <title id="title">Accept loop, bounded queue, and worker pool diagram</title>
+  <desc id="desc">A simple left-to-right diagram showing clients entering the accept loop, then the bounded queue, worker pool, engine adapter, table locks, and SQL engine.</desc>
+  <defs>
+    <style>
+      .bg { fill: #faf8f2; }
+      .panel { fill: #ffffff; stroke: #d6d3d1; stroke-width: 2; }
+      .title { font: 700 28px Arial, Helvetica, sans-serif; fill: #111827; }
+      .label { font: 700 20px Arial, Helvetica, sans-serif; fill: #111827; }
+      .small { font: 500 14px Arial, Helvetica, sans-serif; fill: #4b5563; }
+      .clients { fill: #dbeafe; stroke: #2563eb; stroke-width: 2; }
+      .accept { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+      .queue { fill: #fee2e2; stroke: #dc2626; stroke-width: 2; }
+      .worker { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; }
+      .engine { fill: #ede9fe; stroke: #7c3aed; stroke-width: 2; }
+      .lock { fill: #ffe4e6; stroke: #e11d48; stroke-width: 2; }
+      .db { fill: #e0f2fe; stroke: #0891b2; stroke-width: 2; }
+      .arrow { stroke: #475569; stroke-width: 4; fill: none; marker-end: url(#arrowhead); }
+      .soft { stroke: #94a3b8; stroke-width: 3; fill: none; marker-end: url(#arrowheadSoft); }
+      .queue-cell { fill: #ffffff; stroke: #dc2626; stroke-width: 1.5; }
+    </style>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#475569" />
+    </marker>
+    <marker id="arrowheadSoft" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#94a3b8" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="520" />
+  <text class="title" x="54" y="56">Accept Loop + Bounded Queue + Worker Thread Pool</text>
+
+  <rect class="panel" x="34" y="84" width="1332" height="398" rx="24" />
+
+  <rect class="clients" x="60" y="196" width="170" height="88" rx="18" />
+  <text class="label" x="103" y="232">Clients</text>
+  <text class="small" x="90" y="258">Browser / curl / tests</text>
+
+  <rect class="accept" x="284" y="184" width="190" height="112" rx="18" />
+  <text class="label" x="317" y="228">Accept Loop</text>
+  <text class="small" x="324" y="255">Accept sockets</text>
+  <text class="small" x="309" y="278">Enqueue requests</text>
+
+  <rect class="queue" x="530" y="172" width="210" height="136" rx="18" />
+  <text class="label" x="561" y="216">Bounded Queue</text>
+  <text class="small" x="582" y="340">Full -&gt; 503</text>
+
+  <rect class="queue-cell" x="564" y="236" width="28" height="54" rx="6" />
+  <rect class="queue-cell" x="602" y="236" width="28" height="54" rx="6" />
+  <rect class="queue-cell" x="640" y="236" width="28" height="54" rx="6" />
+  <rect class="queue-cell" x="678" y="236" width="28" height="54" rx="6" />
+
+  <rect class="worker" x="798" y="108" width="200" height="86" rx="18" />
+  <text class="label" x="852" y="158">Worker 1</text>
+
+  <rect class="worker" x="798" y="205" width="200" height="86" rx="18" />
+  <text class="label" x="852" y="255">Worker 2</text>
+
+  <rect class="worker" x="798" y="302" width="200" height="86" rx="18" />
+  <text class="label" x="852" y="352">Worker 3</text>
+
+  <text class="small" x="816" y="420">Parallel request execution</text>
+
+  <rect class="engine" x="1054" y="184" width="190" height="112" rx="18" />
+  <text class="label" x="1080" y="228">Engine Adapter</text>
+  <text class="small" x="1107" y="255">Parse / Execute</text>
+  <text class="small" x="1087" y="278">Capture / Map Error</text>
+
+  <rect class="lock" x="1278" y="134" width="86" height="58" rx="14" />
+  <text class="small" x="1296" y="168">student</text>
+  <text class="small" x="1308" y="184">lock</text>
+
+  <rect class="lock" x="1278" y="222" width="86" height="58" rx="14" />
+  <text class="small" x="1295" y="256">product</text>
+  <text class="small" x="1308" y="272">lock</text>
+
+  <rect class="db" x="1260" y="326" width="122" height="76" rx="18" />
+  <text class="label" x="1292" y="357">SQL</text>
+  <text class="small" x="1286" y="382">Engine</text>
+
+  <path class="arrow" d="M 230 240 L 284 240" />
+  <path class="arrow" d="M 474 240 L 530 240" />
+  <path class="arrow" d="M 740 240 C 770 240, 770 151, 798 151" />
+  <path class="arrow" d="M 740 240 L 798 248" />
+  <path class="arrow" d="M 740 240 C 770 240, 770 345, 798 345" />
+  <path class="arrow" d="M 998 151 C 1028 151, 1028 219, 1054 219" />
+  <path class="arrow" d="M 998 248 L 1054 248" />
+  <path class="arrow" d="M 998 345 C 1028 345, 1028 261, 1054 261" />
+  <path class="soft" d="M 1244 214 L 1278 163" />
+  <path class="soft" d="M 1244 240 L 1278 251" />
+  <path class="soft" d="M 1321 280 L 1321 326" />
+  <path class="soft" d="M 1321 192 L 1321 326" />
+
+  <text class="small" x="1184" y="108">Same table - serialized by lock</text>
+  <text class="small" x="1140" y="432">Different tables can proceed in parallel</text>
+</svg>
