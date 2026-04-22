@@ -173,7 +173,94 @@ build/bin/sqlapi_server
 - index invalidate 후 재조회
 - 서버 재시작 후 재조회
 
-## 6. 테스트 코드 관리 원칙
+## 6. API 테스트 체크리스트
+
+이 체크리스트는 `docs/week8-requirements.md`, `docs/week8-api-spec.md`를 기준으로 만든다.
+
+표기 규칙:
+
+- `완료`: 현재 자동 테스트로 검증 중
+- `추가 필요`: 문서에는 있으나 현재 자동 테스트가 부족함
+
+### 6.1 기본 엔드포인트 계약
+
+- `GET /health` 200 응답: `완료`
+- `GET /health` 응답 필드 `ok`, `status`, `worker_count`, `queue_depth`: `완료`
+- `GET /health` 응답 `Content-Type: application/json; charset=utf-8`: `완료`
+- `GET /health`에서 request body 금지: `완료`
+- `GET /health`에서 `Content-Length: 0` 허용: `완료`
+- `POST /query` 정상 `SELECT` 실행: `완료`
+- `POST /query` 성공 응답 `Content-Type: application/json; charset=utf-8`: `완료`
+- `POST /query`에서 `application/json; charset=utf-8` 허용: `완료`
+
+### 6.2 HTTP 요청 형식 검증
+
+- `POST /query`에서 `Content-Type` 누락/비지원 시 `400 INVALID_CONTENT_TYPE`: `완료`
+- `charset=utf-8` 외 charset 거부: `완료`
+- `Content-Length` 누락 시 `411 CONTENT_LENGTH_REQUIRED`: `완료`
+- `Content-Length` 비정상 값 시 `400 INVALID_CONTENT_LENGTH`: `완료`
+- body 길이와 `Content-Length` 불일치 시 `400 INVALID_CONTENT_LENGTH`: `완료`
+- request body 제한 초과 시 `413 PAYLOAD_TOO_LARGE`: `완료`
+- request line + header 제한 초과 시 `431 HEADER_TOO_LARGE`: `완료`
+- `Transfer-Encoding: chunked` 사용 시 `501 CHUNKED_NOT_SUPPORTED`: `완료`
+- 존재하지 않는 경로 `404 NOT_FOUND`: `완료`
+- 존재하는 경로의 잘못된 메서드 `405 METHOD_NOT_ALLOWED`: `완료`
+
+### 6.3 JSON 및 SQL 입력 검증
+
+- 잘못된 JSON 시 `400 INVALID_JSON`: `완료`
+- `sql` 필드 누락 시 `400 MISSING_SQL_FIELD`: `완료`
+- parser 실패 시 `400 SQL_PARSE_ERROR`: `완료`
+- 지원하지 않는 SQL 시 `400 UNSUPPORTED_SQL`: `완료`
+- 잘못된 SQL 인자 시 `400 INVALID_SQL_ARGUMENT`: `완료`
+- lexer 실패 시 `400 SQL_LEX_ERROR`: `추가 필요`
+- multi-statement 거부: `추가 필요`
+
+### 6.4 엔진/스토리지 오류 매핑
+
+- 스키마 로딩 실패 시 `500 SCHEMA_LOAD_ERROR`: `완료`
+- CSV 파일 I/O 실패 시 `500 STORAGE_IO_ERROR`: `추가 필요`
+- 인덱스 rebuild 실패 시 `500 INDEX_REBUILD_ERROR`: `추가 필요`
+- 분류되지 않은 executor 실패 시 `500 ENGINE_EXECUTION_ERROR`: `추가 필요`
+- 분류되지 않은 내부 오류 시 `500 INTERNAL_ERROR`: `추가 필요`
+
+### 6.5 서버 시작/종료 및 환경 검증
+
+- `--port` 범위 검증: `추가 필요`
+- `--worker-count >= 1` 검증: `추가 필요`
+- `--queue-capacity >= 1` 검증: `추가 필요`
+- 존재하지 않는 `--schema-dir` 거부: `추가 필요`
+- 존재하지 않는 `--data-dir` 거부: `추가 필요`
+- 종료 경로에서 accept thread / worker 정리: `추가 필요`
+
+### 6.6 병렬성 및 동시성 검증
+
+- 다중 동시 요청 처리: `추가 필요`
+- 같은 테이블 동시 접근 직렬화: `추가 필요`
+- 다른 테이블 요청 병렬 처리: `추가 필요`
+- queue full 시 `503 QUEUE_FULL`: `추가 필요`
+- race condition / deadlock / unlock 누락 점검: `추가 필요`
+- 재시작 후 데이터 조회 가능 여부: `추가 필요`
+- 인덱스 기반 조회 경로 유지: `추가 필요`
+
+## 7. 현재 자동 테스트 반영 전략
+
+현재 `tests/test_api_server.c`는 실제 서버를 띄운 뒤 black-box 방식으로 아래 항목을 자동 검증한다.
+
+- 헬스체크 정상/비정상 요청
+- `POST /query` 정상 요청
+- 헤더, body, JSON, 경로, 메서드 관련 대표 오류 코드
+- 대표 SQL 오류 매핑
+- 대표 스토리지 I/O 오류 매핑
+
+향후 별도 테스트 파일 또는 보조 스레드/프로세스 fixture가 필요한 항목은 다음과 같다.
+
+- 병렬 요청 및 락 직렬화 검증
+- queue full 재현
+- 시작 옵션 실패를 별도 프로세스로 검증하는 테스트
+- 재시작/복구성 중심 시나리오
+
+## 8. 테스트 코드 관리 원칙
 
 - 엔진 테스트와 서버 테스트는 파일을 분리한다.
 - 다만 실행은 하나의 테스트 타깃으로 통합할 수 있다.
@@ -191,9 +278,9 @@ tests/
 
 현재 `tests/test_runner.c`에 있는 7주차 엔진 회귀 테스트는 유지하거나 `test_sql_engine.c`로 분리한다.
 
-## 7. 테스트 데이터셋
+## 9. 테스트 데이터셋
 
-### 7.1 `student`
+### 9.1 `student`
 
 예시 스키마:
 
@@ -210,7 +297,7 @@ department,student_number,name,age
 수학과,2024002,이수학,21
 ```
 
-### 7.2 `product`
+### 9.2 `product`
 
 예시 스키마:
 
@@ -227,7 +314,7 @@ name,category,price,stock
 키보드,전자기기,120000,30
 ```
 
-### 7.3 alias lock 정규화용 테이블
+### 9.3 alias lock 정규화용 테이블
 
 락 키 정규화 검증을 위해 alias 형태의 스키마도 준비한다.
 
