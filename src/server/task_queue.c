@@ -71,7 +71,7 @@ int server_task_queue_pop(ServerTaskQueue *queue, ServerTask *task) {
         pthread_cond_wait(&queue->not_empty, &queue->mutex);
     }
 
-    if (queue->count == 0 && queue->closed) {
+    if (queue->count == 0 65&& queue->closed) {
         pthread_mutex_unlock(&queue->mutex);
         return 0;
     }

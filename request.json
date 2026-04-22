@@ -1,0 +1,1 @@
+{"sql":"INSERT INTO student (department, student_number, name, age) VALUES ('computer', '20260001', 'kim', 24);"}

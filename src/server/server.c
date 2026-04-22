@@ -48,6 +48,16 @@
 #include <sys/stat.h>
 #endif
 
+// 이 흐름은 서버 프로그램의 처음부터 끝까지 생명주기라고 보면 됩니다.
+
+// main
+//   -> sqlapi_server_config_set_defaults()
+//   -> sqlapi_server_create()
+//   -> sqlapi_server_start()
+//   -> sqlapi_server_wait()
+//   -> sqlapi_server_destroy()
+
+
 struct SqlApiServer {
     /* CLI/문서에 노출되는 런타임 설정값이다. */
     char *host;
@@ -411,6 +421,7 @@ int sqlapi_server_create(SqlApiServer **out_server,
 /* 네트워크 초기화 후 listen socket, worker pool, accept thread를 순서대로 시작한다. */
 int sqlapi_server_start(SqlApiServer *server, char *error, size_t error_size) {
     /* Windows 환경에서는 listen 전에 네트워크 스택 초기화가 필요하다. */
+    // 네트워크 초기화
     if (!sql_platform_network_init(error, error_size)) {
         return 0;
     }
@@ -421,6 +432,7 @@ int sqlapi_server_start(SqlApiServer *server, char *error, size_t error_size) {
     }
 
     /* worker pool부터 시작해야 accept thread가 넘긴 작업을 바로 처리할 수 있다. */
+    // worker thread pool 만든다
     if (!server_worker_pool_start(&server->worker_pool,
                                   server->worker_count,
                                   server_worker_main,
@@ -434,6 +446,7 @@ int sqlapi_server_start(SqlApiServer *server, char *error, size_t error_size) {
     }
 
     /* 마지막으로 accept thread를 띄워 외부 연결 유입을 시작한다. */
+    // accept thread 만든다
     if (pthread_create(&server->accept_thread, NULL, server_accept_main, server) != 0) {
         snprintf(error, error_size, "failed to create accept thread");
         /* accept thread 생성 실패 시 이미 띄운 worker와 queue를 정상 종료 경로로 정리한다. */
@@ -445,6 +458,7 @@ int sqlapi_server_start(SqlApiServer *server, char *error, size_t error_size) {
         return 0;
     }
 
+    //서버 정상 시작
     server->started = 1;
     return 1;
 }
@@ -474,6 +488,9 @@ void sqlapi_server_request_shutdown(SqlApiServer *server) {
 }
 
 /* 시작된 스레드들이 모두 정리될 때까지 join한다. */
+// 서버 끝날때까지 기다리는 함수
+// 여기서 accept thread랑 worker thread들이 다 종료할때까지 대기
+// 다른 스레드들이 끝날 때까지 기다린다는 의미
 void sqlapi_server_wait(SqlApiServer *server) {
     if (!server->started) {
         /* start 이전에는 join할 스레드가 없으므로 바로 반환한다. */
@@ -486,6 +503,7 @@ void sqlapi_server_wait(SqlApiServer *server) {
 }
 
 /* 서버 객체가 소유한 하위 모듈과 동적 메모리를 모두 해제한다. */
+// 메모리, mutex, queue, lock manager, 문자열 같은 자원들을 싹 치우는 마지막 정리 단계
 void sqlapi_server_destroy(SqlApiServer *server) {
     if (server == NULL) {
         return;

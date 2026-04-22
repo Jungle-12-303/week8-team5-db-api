@@ -23,6 +23,19 @@ static pthread_mutex_t test_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
 static SqlEngineErrorCode forced_next_error = SQL_ENGINE_ERROR_NONE;
 static int delay_after_lock_ms = 0;
 
+//sql_engine_adapter.c는 “API 요청용 SQL 문자열”을 “기존 DB 엔진 실행 결과”로 바꿔주는 연결 파일입니다.
+
+// SQL 문자열 받음
+// -> lexer/parser로 해석
+// -> schema 확인
+// -> 락 잡음
+// -> execute_statement() 실행
+// -> 결과를 JSON 응답에 넣기 좋은 형태로 바꿔서 돌려줌
+
+
+
+
+// parser가 만든 statementType값 받아서 insert 또는 select 문자열로 바꾸는 함수
 static const char *statement_type_name(StatementType type) {
     if (type == STATEMENT_INSERT) {
         return "insert";
@@ -31,6 +44,7 @@ static const char *statement_type_name(StatementType type) {
     return "select";
 }
 
+// 테이블 이름만 꺼내는 함수
 static const char *statement_table_name(const Statement *statement) {
     if (statement->type == STATEMENT_INSERT) {
         return statement->as.insert_statement.table_name;
@@ -39,21 +53,27 @@ static const char *statement_table_name(const Statement *statement) {
     return statement->as.select_statement.table_name;
 }
 
+// 에러 결과를 result 안에 정리해서 넣는 함수 ex)  SQL 비어있음, SQL 길이 너무김, lexer 실패 등
 static void set_error(SqlEngineAdapterResult *result, SqlEngineErrorCode code, const char *message) {
     result->ok = 0;
     result->error_code = code;
     snprintf(result->error_message, sizeof(result->error_message), "%s", message);
 }
 
+// sql이 비어있거나 공백만 있는지 확인하는 함수
+
 static int is_blank_sql(const char *sql) {
+
+    //sql이 비어있지 않으면
     while (*sql != '\0') {
         if (*sql != ' ' && *sql != '\t' && *sql != '\r' && *sql != '\n') {
-            return 0;
+            return 0; // 0반환
         }
         sql++;
     }
 
-    return 1;
+    //sql이 비어있으면
+    return 1; 
 }
 
 static void sleep_for_test_delay(int delay_ms) {
@@ -101,7 +121,16 @@ static const char *forced_error_message(SqlEngineErrorCode code) {
             return "forced adapter failure";
     }
 }
+// 파일 스트림에 들어있는 내용을 전부 읽어서 하나의 문자열로 만드는 함수
 
+// 예를 들어 SELECT * FROM student; 실행 결과가 임시 스트림에 이렇게 들어있다고 해보면:
+
+// id,name
+// 1,Alice
+// 2,Bob
+
+// 반환값 : "id,name\n1,Alice\n2,Bob\n"
+// DB 실행 결과를 클라이언트에게 보내기 쉬운 문자열 형태로 바꾸려고 하기 위해
 static char *read_stream_to_string(FILE *stream, char *error, size_t error_size) {
     char chunk[1024];
     char *buffer = NULL;
@@ -156,7 +185,10 @@ static char *read_stream_to_string(FILE *stream, char *error, size_t error_size)
     return buffer;
 }
 
+// 실행 중 난 에러메시지를 보고 에러 종류를 분류하는 함수
+// message 보고
 static SqlEngineErrorCode classify_execution_error(const Statement *statement, const char *message) {
+    // message안에 저 문자열이 있으면 에러 종류 반환
     if (strstr(message, "WHERE id value must be an integer") != NULL ||
         strstr(message, "explicit id column is not allowed") != NULL ||
         strstr(message, "unknown column in INSERT") != NULL ||
@@ -184,7 +216,9 @@ static SqlEngineErrorCode classify_execution_error(const Statement *statement, c
     return SQL_ENGINE_ERROR_ENGINE_EXECUTION_ERROR;
 }
 
+// schema 읽는 중에 난 에러를 분류하는 함수
 static SqlEngineErrorCode classify_schema_load_error(const char *message) {
+    // message안에 저 문자열이 있으면 에러 종류 반환
     if (strstr(message, "failed to open table data file") != NULL ||
         strstr(message, "table data file is empty") != NULL ||
         strstr(message, "failed to open schema meta file") != NULL) {
@@ -194,38 +228,47 @@ static SqlEngineErrorCode classify_schema_load_error(const char *message) {
     return SQL_ENGINE_ERROR_SCHEMA_LOAD_ERROR;
 }
 
+// sql 1개를 실제로 받아 실행하고 그 결과를 result에 채워주는 핵심 함수
+//result에는 SQL 실행 결과 요약 정보가 들어 있다
+
+//result.output = "id,name\n1,Alice\n2,Bob\n"
 int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
                                const char *sql,
                                SqlEngineAdapterResult *result) {
-    TokenArray tokens = {0};
-    ParseResult parse_result;
-    SchemaResult schema_result;
-    ExecResult exec_result;
-    EngineTableLockHandle lock_handle = {0};
-    FILE *output_stream = NULL;
-    clock_t started;
-    int lock_acquired = 0;
+    TokenArray tokens = {0}; // 토큰 저장할 변수
+    ParseResult parse_result; // 파싱 결과 저장
+    SchemaResult schema_result; // 스키마 읽은 결과 저장
+    ExecResult exec_result; // 실제 실행 결과 저장
+    EngineTableLockHandle lock_handle = {0}; // 테이블 락 핸들
+    FILE *output_stream = NULL; // SELECT 결과 담을 임시 파일
+    clock_t started; // 시작시간 저장
+    int lock_acquired = 0; // 락 잡았는지 표시
 
-    memset(result, 0, sizeof(*result));
-    memset(&schema_result, 0, sizeof(schema_result));
-
+    memset(result, 0, sizeof(*result)); // result 초기화
+    memset(&schema_result, 0, sizeof(schema_result)); // schema_result 초기화
+    
+    //sql이 비었는지 검사
     if (sql == NULL || is_blank_sql(sql)) {
         set_error(result, SQL_ENGINE_ERROR_INVALID_SQL_ARGUMENT, "SQL statement must not be blank");
         return 1;
     }
 
+    //sql 길이 제한 초과 검사
     if (config->sql_length_limit > 0 && strlen(sql) > config->sql_length_limit) {
         set_error(result, SQL_ENGINE_ERROR_PAYLOAD_TOO_LARGE, "SQL statement exceeds configured length limit");
         return 1;
     }
 
+    // 실행 시작 시간 기록
     started = clock();
 
+    //lexer로 sql 토큰으로 분해
     if (!lex_sql(sql, &tokens, result->error_message, sizeof(result->error_message))) {
         set_error(result, SQL_ENGINE_ERROR_SQL_LEX_ERROR, result->error_message);
         return 1;
     }
 
+    //토큰을 sql 문장 구조로 해석
     parse_result = parse_statement(&tokens);
     if (!parse_result.ok) {
         SqlEngineErrorCode code = SQL_ENGINE_ERROR_SQL_PARSE_ERROR;
@@ -239,6 +282,7 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
         return 1;
     }
 
+    //schema 읽기
     schema_result = load_schema(config->schema_dir,
                                 config->data_dir,
                                 statement_table_name(&parse_result.statement));
@@ -249,6 +293,11 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
         return 1;
     }
 
+    // 테이블 락 잡기
+    // 같은 테이블에 다른 worker thread가 이미 들어가 있으면 여기서 기다린다
+
+    // worker1 : studnet 테이블 INSERT
+    // worker2 : student 테이블 SELECT
     if (!engine_lock_manager_acquire(config->lock_manager,
                                      schema_result.schema.storage_name,
                                      &lock_handle,
@@ -268,13 +317,18 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
             goto cleanup;
         }
     }
-
+    //SELECT 결과 담을 임시파일 만들기
     output_stream = tmpfile();
     if (output_stream == NULL) {
         set_error(result, SQL_ENGINE_ERROR_INTERNAL_ERROR, "failed to create SQL output buffer");
         goto cleanup;
     }
 
+
+    //실제 SQL 실행
+
+    //INSERT면 CSV에 저장
+    //SELECT면 조회해서 결과를 output_stream에 씀
     exec_result = execute_statement(&parse_result.statement,
                                     config->schema_dir,
                                     config->data_dir,
@@ -286,6 +340,8 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
         goto cleanup;
     }
 
+    //성공 결과 채우기
+    //구조체 채운다
     result->ok = 1;
     snprintf(result->statement_type,
              sizeof(result->statement_type),
@@ -294,9 +350,13 @@ int sql_engine_adapter_execute(const SqlEngineAdapterConfig *config,
     result->affected_rows = exec_result.affected_rows;
     snprintf(result->summary, sizeof(result->summary), "%s", exec_result.message);
 
+
+    //INSERT는 보여줄 결과 없으니까 output =""
     if (parse_result.statement.type == STATEMENT_INSERT) {
         result->output = copy_string("");
-    } else {
+    }
+    //SELECT는 result->output에 output_stream저장 
+    else {
         result->output = read_stream_to_string(output_stream,
                                               result->error_message,
                                               sizeof(result->error_message));
@@ -321,6 +381,7 @@ cleanup:
     return 1;
 }
 
+//메모리 해제
 void sql_engine_adapter_result_free(SqlEngineAdapterResult *result) {
     free(result->output);
     result->output = NULL;

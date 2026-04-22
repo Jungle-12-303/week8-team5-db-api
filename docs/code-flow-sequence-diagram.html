@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>week8-team5 DB API 코드 흐름 다이어그램</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm;
+    }
+    :root {
+      --bg: #f7f4ee;
+      --paper: #fffdf8;
+      --ink: #1f1d1a;
+      --muted: #6a645c;
+      --line: #d7ccbd;
+      --accent: #285943;
+      --accent-2: #c76f34;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    .page {
+      background: var(--paper);
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      break-after: page;
+    }
+    .page:last-child {
+      break-after: auto;
+    }
+    h1, h2, h3 {
+      margin: 0 0 10px 0;
+      line-height: 1.25;
+    }
+    h1 {
+      font-size: 28px;
+      color: var(--accent);
+    }
+    h2 {
+      font-size: 20px;
+      border-bottom: 2px solid var(--line);
+      padding-bottom: 6px;
+      margin-top: 18px;
+    }
+    h3 {
+      font-size: 15px;
+      color: var(--accent-2);
+      margin-top: 16px;
+    }
+    p, li {
+      font-size: 12.5px;
+      margin: 0 0 8px 0;
+    }
+    ul {
+      margin: 6px 0 10px 18px;
+      padding: 0;
+    }
+    .lead {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fff;
+      margin: 10px 0 14px 0;
+    }
+    .seq {
+      font-family: "Cascadia Mono", "Consolas", monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      background: #fcfbf8;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      line-height: 1.45;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #e8f0eb;
+      color: var(--accent);
+      font-size: 11px;
+      margin-right: 6px;
+    }
+    code {
+      font-family: "Cascadia Mono", "Consolas", monospace;
+      background: #f2eee6;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <section class="page">
+    <h1>week8-team5 DB API 코드 흐름</h1>
+    <p class="lead">우리 프로젝트에서 “서버를 켰을 때 무엇이 실행되고, 요청 하나가 들어오면 어느 파일을 거쳐 어디까지 가는지”를 시퀀스 다이어그램 느낌으로 정리한 문서입니다.</p>
+
+    <div class="box">
+      <span class="pill">CLI 실행기</span>
+      <code>src/app/main.c</code> 는 로컬 SQL CLI 진입점입니다. 서버를 켤 때는 실행되지 않습니다.
+      <br>
+      <span class="pill">API 서버 실행기</span>
+      <code>src/app/sqlapi_server_main.c</code> 가 실제 서버 실행 진입점입니다.
+    </div>
+
+    <h2>1. 큰 구조 한눈에 보기</h2>
+    <div class="seq">Client
+  |
+  v
+sqlapi_server_main.c
+  |
+  v
+server.c
+  |
+  +--> accept thread
+  |      |
+  |      v
+  |   task_queue.c
+  |
+  +--> worker_pool.c
+         |
+         v
+      worker thread
+         |
+         v
+      http/router.c
+         |
+         +--> api/health_handler.c
+         |
+         +--> api/query_handler.c
+                 |
+                 v
+              service/db_service.c
+                 |
+                 v
+              engine/sql_engine_adapter.c
+                 |
+                 +--> engine_lock_manager.c
+                 +--> 기존 SQL parser/executor/storage/index
+</div>
+
+    <h2>2. 파일별 역할</h2>
+    <div class="grid">
+      <div class="box">
+        <h3>실행 시작</h3>
+        <p><code>src/app/sqlapi_server_main.c</code></p>
+        <p>옵션을 읽고, 서버 객체를 만들고, 시작하고, 종료 신호를 받아 정리합니다.</p>
+      </div>
+      <div class="box">
+        <h3>서버 본체</h3>
+        <p><code>src/server/server.c</code></p>
+        <p>listen socket, accept loop, task queue, worker pool, shutdown 흐름을 총괄합니다.</p>
+      </div>
+      <div class="box">
+        <h3>큐와 스레드</h3>
+        <p><code>src/server/task_queue.c</code>, <code>src/server/worker_pool.c</code></p>
+        <p>요청을 잠깐 보관하고, worker 스레드들을 생성하고 join 합니다.</p>
+      </div>
+      <div class="box">
+        <h3>API 처리</h3>
+        <p><code>src/http/router.c</code>, <code>src/api/*.c</code></p>
+        <p>경로를 나누고 <code>/health</code>, <code>/query</code> 응답을 만듭니다.</p>
+      </div>
+      <div class="box">
+        <h3>서비스 계층</h3>
+        <p><code>src/service/db_service.c</code></p>
+        <p>API 계층이 엔진을 직접 모르도록 얇게 연결하는 어댑터입니다.</p>
+      </div>
+      <div class="box">
+        <h3>DB 엔진 연결</h3>
+        <p><code>src/engine/sql_engine_adapter.c</code>, <code>src/engine/engine_lock_manager.c</code></p>
+        <p>SQL 파싱/실행으로 연결하고, 테이블 단위 mutex 락을 잡아 동시성 충돌을 막습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <h2>3. 서버 시작 시퀀스</h2>
+    <div class="seq">사용자
+  -> sqlapi_server_main.c : ./build/bin/sqlapi_server --host ... --port ...
+sqlapi_server_main.c
+  -> sqlapi_server_config_set_defaults()
+  -> argv 파싱
+  -> sqlapi_server_create(server.c)
+
+server.c : create 단계
+  -> 설정 검증
+  -> state_mutex 초기화
+  -> task_queue 초기화
+  -> table index registry 초기화
+  -> engine lock manager 초기화
+  -> DbService.adapter_config 연결
+  -> SqlApiServer 객체 반환
+
+sqlapi_server_main.c
+  -> sqlapi_server_start(server.c)
+
+server.c : start 단계
+  -> network init
+  -> listen socket open
+  -> worker_pool_start(worker_pool.c)
+  -> accept thread 생성
+  -> started = 1
+
+sqlapi_server_main.c
+  -> sqlapi_server_wait(server.c)
+  -> accept thread / worker thread 종료까지 대기
+</div>
+    <p class="note">핵심: 서버를 실행하면 <code>main.c</code> 가 아니라 <code>sqlapi_server_main.c</code> 가 시작되고, 그 안에서 <code>server.c</code> 가 실제 런타임을 띄웁니다.</p>
+
+    <h2>4. GET /health 요청 흐름</h2>
+    <div class="seq">Client
+  -> accept thread(server.c) : TCP 연결
+accept thread
+  -> task_queue_try_push(task_queue.c)
+  -> worker 하나 깨움
+
+worker thread(server.c)
+  -> task_queue_pop(task_queue.c)
+  -> handle_client_request(server.c)
+  -> http_read_request(...)
+  -> http_route_request(router.c)
+
+router.c
+  -> path == /health ? yes
+  -> api_handle_health(health_handler.c)
+
+health_handler.c
+  -> worker_count, queue_depth 읽기
+  -> {"ok":true,"status":"ok",...} JSON 생성
+
+worker thread
+  -> http_response_send(...)
+  -> socket close
+</div>
+
+    <h2>5. POST /query 요청 흐름</h2>
+    <div class="seq">Client
+  -> accept thread
+accept thread
+  -> queue에 요청 넣기
+
+worker thread
+  -> queue에서 요청 꺼내기
+  -> http_read_request()
+  -> router.c
+
+router.c
+  -> path == /query ? yes
+  -> api_handle_query(query_handler.c)
+
+query_handler.c
+  -> Content-Length 검사
+  -> Content-Type 검사
+  -> body JSON 파싱
+  -> sql 필드 추출
+  -> db_service_execute_sql(db_service.c)
+
+db_service.c
+  -> sql_engine_adapter_execute(sql_engine_adapter.c)
+
+sql_engine_adapter.c
+  -> lex_sql()
+  -> parse_statement()
+  -> load_schema()
+  -> engine_lock_manager_acquire()
+  -> execute_statement()
+  -> 결과 문자열/메타데이터 정리
+  -> engine_lock_manager_release()
+
+query_handler.c
+  -> JSON 응답 본문 생성
+worker thread
+  -> http_response_send()
+</div>
+  </section>
+
+  <section class="page">
+    <h2>6. student INSERT 요청을 락 기준으로 보기</h2>
+    <div class="seq">예시 SQL
+  POST /query
+  {"sql":"INSERT INTO student (department, student_number, name, age) VALUES (...)"}
+
+1) accept thread
+   -> queue mutex lock
+   -> 요청을 task queue에 push
+   -> queue mutex unlock
+
+2) worker thread
+   -> queue mutex lock
+   -> 요청을 task queue에서 pop
+   -> queue mutex unlock
+
+3) query_handler.c
+   -> body에서 sql 문자열 추출
+   -> db_service_execute_sql() 호출
+
+4) sql_engine_adapter.c
+   -> SQL을 파싱해서 table name == student 확인
+   -> engine_lock_manager_acquire(lock_manager, "student")
+
+5) engine_lock_manager.c
+   -> manager mutex lock
+   -> student용 mutex가 있는지 찾기
+   -> 없으면 새로 생성
+   -> manager mutex unlock
+   -> student table mutex lock
+
+6) sql_engine_adapter.c
+   -> execute_statement()
+   -> CSV append / index 반영 등 실행
+
+7) sql_engine_adapter.c
+   -> engine_lock_manager_release()
+   -> student table mutex unlock
+
+8) worker thread
+   -> HTTP 응답 전송
+</div>
+
+    <div class="box">
+      <h3>왜 이렇게 락을 두 단계로 거나?</h3>
+      <p><code>manager->mutex</code> 는 “테이블별 락 목록” 자체를 안전하게 관리하기 위한 락입니다.</p>
+      <p><code>entry->mutex</code> 는 실제 <code>student</code> 테이블 작업을 직렬화하기 위한 락입니다.</p>
+      <p>즉, “락 보관함을 지키는 락”과 “student 창고 문 자체의 락”이 따로 있는 셈입니다.</p>
+    </div>
+
+    <h2>7. 발표 때 한 문장으로 설명하면</h2>
+    <div class="box">
+      <p>우리 코드는 <code>sqlapi_server_main.c</code> 에서 서버를 시작하고, <code>server.c</code> 가 요청을 accept thread + task queue + worker pool 구조로 분배합니다. 이후 <code>router → handler → service → sql_engine_adapter</code> 순서로 내려가며, 같은 테이블 충돌은 <code>engine_lock_manager</code> 의 mutex로 막습니다.</p>
+    </div>
+
+    <h2>8. 기억하면 좋은 핵심 포인트</h2>
+    <ul>
+      <li><code>main.c</code> 는 SQL CLI 진입점이고, 서버 실행 시에는 안 돌아갑니다.</li>
+      <li><code>sqlapi_server_main.c</code> 가 API 서버 프로그램의 진입점입니다.</li>
+      <li>요청 분배 구조는 producer-consumer 패턴입니다. accept thread가 넣고 worker가 꺼냅니다.</li>
+      <li><code>/health</code> 는 빠른 상태 확인용, <code>/query</code> 는 실제 SQL 실행 경로입니다.</li>
+      <li>동시성 핵심은 queue mutex, state mutex, registry mutex, table mutex 입니다.</li>
+      <li>가장 중요한 락은 테이블별 mutex 입니다. 같은 테이블은 직렬화되고 다른 테이블은 병렬 가능성이 있습니다.</li>
+    </ul>
+  </section>
+</body>
+</html>

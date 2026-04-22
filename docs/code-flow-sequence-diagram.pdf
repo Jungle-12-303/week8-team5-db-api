@@ -1,0 +1,303 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+2 0 obj
+<< /Length 1318 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+50 760 Td
+(WEEK8 TEAM5 DB API CODE FLOW) Tj
+T*
+() Tj
+T*
+(This PDF summarizes which entry point runs, how the server starts,) Tj
+T*
+(and how one request travels across our files.) Tj
+T*
+() Tj
+T*
+(1. ENTRY POINTS) Tj
+T*
+( - src/app/main.c               : local SQL CLI program) Tj
+T*
+( - src/app/sqlapi_server_main.c: API server entry point) Tj
+T*
+() Tj
+T*
+(When we run ./build/bin/sqlapi_server, the active main\(\) is) Tj
+T*
+(src/app/sqlapi_server_main.c, not src/app/main.c.) Tj
+T*
+() Tj
+T*
+(2. BIG PICTURE) Tj
+T*
+() Tj
+T*
+(Client) Tj
+T*
+(  -> sqlapi_server_main.c) Tj
+T*
+(     -> server.c) Tj
+T*
+(        -> accept thread) Tj
+T*
+(           -> task_queue.c) Tj
+T*
+(        -> worker_pool.c) Tj
+T*
+(           -> worker thread) Tj
+T*
+(              -> http/router.c) Tj
+T*
+(                 -> api/health_handler.c) Tj
+T*
+(                 -> api/query_handler.c) Tj
+T*
+(                    -> service/db_service.c) Tj
+T*
+(                       -> engine/sql_engine_adapter.c) Tj
+T*
+(                          -> engine/engine_lock_manager.c) Tj
+T*
+(                          -> parser / executor / storage / index) Tj
+T*
+() Tj
+T*
+(Key idea:) Tj
+T*
+(The app layer starts the runtime, server.c orchestrates threads and sockets,) Tj
+T*
+(and the engine layer reuses the existing SQL processor.) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 1301 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+50 760 Td
+(3. SERVER START SEQUENCE) Tj
+T*
+() Tj
+T*
+(User) Tj
+T*
+(  -> ./build/bin/sqlapi_server --host ... --port ...) Tj
+T*
+() Tj
+T*
+(sqlapi_server_main.c) Tj
+T*
+(  -> sqlapi_server_config_set_defaults\(\)) Tj
+T*
+(  -> parse argv) Tj
+T*
+(  -> sqlapi_server_create\(server.c\)) Tj
+T*
+() Tj
+T*
+(server.c create stage) Tj
+T*
+(  -> validate config) Tj
+T*
+(  -> init state_mutex) Tj
+T*
+(  -> init task queue) Tj
+T*
+(  -> init table index registry) Tj
+T*
+(  -> init engine lock manager) Tj
+T*
+(  -> connect DbService adapter config) Tj
+T*
+() Tj
+T*
+(sqlapi_server_main.c) Tj
+T*
+(  -> sqlapi_server_start\(server.c\)) Tj
+T*
+() Tj
+T*
+(server.c start stage) Tj
+T*
+(  -> network init) Tj
+T*
+(  -> open listen socket) Tj
+T*
+(  -> start worker pool) Tj
+T*
+(  -> create accept thread) Tj
+T*
+() Tj
+T*
+(sqlapi_server_main.c) Tj
+T*
+(  -> sqlapi_server_wait\(server.c\)) Tj
+T*
+(  -> wait until accept thread and workers stop) Tj
+T*
+() Tj
+T*
+(4. GET /health SEQUENCE) Tj
+T*
+() Tj
+T*
+(Client -> accept thread -> task queue -> worker thread) Tj
+T*
+(worker thread -> http_read_request\(\) -> router.c) Tj
+T*
+(router.c -> api_handle_health\(health_handler.c\)) Tj
+T*
+(health_handler.c -> build JSON with worker_count and queue_depth) Tj
+T*
+(worker thread -> http_response_send\(\) -> close socket) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 1560 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+50 760 Td
+(5. POST /query SEQUENCE) Tj
+T*
+() Tj
+T*
+(Client -> accept thread -> task queue -> worker thread) Tj
+T*
+(worker thread -> http_read_request\(\) -> router.c) Tj
+T*
+(router.c -> api_handle_query\(query_handler.c\)) Tj
+T*
+() Tj
+T*
+(query_handler.c) Tj
+T*
+(  -> check Content-Length) Tj
+T*
+(  -> check Content-Type) Tj
+T*
+(  -> parse JSON body) Tj
+T*
+(  -> extract sql field) Tj
+T*
+(  -> db_service_execute_sql\(db_service.c\)) Tj
+T*
+() Tj
+T*
+(db_service.c) Tj
+T*
+(  -> sql_engine_adapter_execute\(sql_engine_adapter.c\)) Tj
+T*
+() Tj
+T*
+(sql_engine_adapter.c) Tj
+T*
+(  -> lex_sql\(\)) Tj
+T*
+(  -> parse_statement\(\)) Tj
+T*
+(  -> load_schema\(\)) Tj
+T*
+(  -> engine_lock_manager_acquire\(\)) Tj
+T*
+(  -> execute_statement\(\)) Tj
+T*
+(  -> engine_lock_manager_release\(\)) Tj
+T*
+(  -> return result) Tj
+T*
+() Tj
+T*
+(6. student INSERT LOCK FLOW) Tj
+T*
+() Tj
+T*
+(accept thread) Tj
+T*
+(  -> queue mutex lock) Tj
+T*
+(  -> push request to queue) Tj
+T*
+(  -> queue mutex unlock) Tj
+T*
+() Tj
+T*
+(worker thread) Tj
+T*
+(  -> queue mutex lock) Tj
+T*
+(  -> pop request from queue) Tj
+T*
+(  -> queue mutex unlock) Tj
+T*
+() Tj
+T*
+(sql_engine_adapter.c) Tj
+T*
+(  -> detect table name: student) Tj
+T*
+(  -> ask engine_lock_manager for student mutex) Tj
+T*
+() Tj
+T*
+(engine_lock_manager.c) Tj
+T*
+(  -> manager mutex lock) Tj
+T*
+(  -> find/create student entry) Tj
+T*
+(  -> manager mutex unlock) Tj
+T*
+(  -> student table mutex lock) Tj
+T*
+() Tj
+T*
+(sql_engine_adapter.c) Tj
+T*
+(  -> execute INSERT safely) Tj
+T*
+(  -> release student table mutex) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Pages /Count 3 /Kids [6 0 R 7 0 R 8 0 R] >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 5 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000077 00000 n 
+0000001447 00000 n 
+0000002800 00000 n 
+0000004412 00000 n 
+0000004481 00000 n 
+0000004607 00000 n 
+0000004733 00000 n 
+0000004859 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+4908
+%%EOF
