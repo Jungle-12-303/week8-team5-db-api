@@ -67,36 +67,60 @@ client
 - `service`: API와 엔진 사이의 얇은 경계 계층입니다.
 - `engine adapter`: 기존 SQL 엔진 연결, 락, 출력 캡처, 오류 변환을 담당합니다.
 
-`engine adapter`는 기존 엔진을 직접 다시 구현하지 않고, SQL 실행에 필요한 단계들을 아래 순서로 조율합니다.
+요청 분배와 SQL 실행은 아래 흐름으로 진행되며, 주요 동기화 지점은 queue mutex, table-level exclusive lock, registry_mutex입니다.
 
 ```mermaid
 flowchart TD
+    subgraph Server["server 런타임"]
+        C["client connection"] --> AC["accept thread"]
+        AC --> QP["queue mutex 획득<br/>bounded queue push"]
+        QP --> BQ["bounded queue"]
+        BQ --> QO["queue mutex 획득<br/>bounded queue pop"]
+        QO --> W["worker thread"]
+    end
+
     subgraph API["API 서버단"]
-        Q["POST /query"] --> H["query_handler"]
+        W --> Q["POST /query"]
+        Q --> H["query_handler"]
         H --> S["db_service"]
+        S2["query_handler<br/>JSON body 생성"]
     end
 
     subgraph Adapter["engine adapter: 경계/조율 계층"]
         A1["SQL 검증"] --> A2["lexer / parser 호출"]
         A2 --> A3["schema 로딩"]
-        A3 --> A4["storage_name 기준 table lock 획득"]
+        A3 --> A4["storage_name 기준<br/>table-level exclusive lock 획득"]
         A4 --> A5["기존 executor 실행"]
         A5 --> A6["SELECT 출력 캡처"]
         A6 --> A7["API result로 변환"]
-        A7 --> A8["lock / schema / AST / token 정리"]
+        A7 --> A8["table lock 해제<br/>schema / AST / token 정리"]
+        A8 --> A9["SqlEngineAdapterResult 반환"]
     end
 
     subgraph DB["기존 DB 엔진단"]
         D1["sql / execution"]
         D2["storage / index"]
+        D3["registry_mutex 획득<br/>TableIndexRegistry 접근"]
         D1 --> D2
+        D2 --> D3
+        D3 --> D2
+    end
+
+    subgraph HTTP["http 응답 계층"]
+        HR["HttpResponse 구성"]
+        HS["http_response_send<br/>HTTP/1.1 status/header/body 전송"]
     end
 
     S --> A1
     A5 --> D1
     D2 --> A6
-    A8 --> R["JSON response"]
+    A9 --> S2
+    S2 --> HR
+    HR --> HS
+    HS --> R["browser / client"]
 ```
+
+이 구현에는 세 가지 주요 동기화 지점이 있습니다. `server/task_queue.c`의 queue mutex는 accept thread와 worker thread가 공유하는 bounded queue의 `head`, `tail`, `count`, `closed` 상태를 보호합니다. SQL 실행 정합성을 위한 table-level exclusive lock은 `engine adapter` 내부에서 `schema.storage_name` 기준으로 획득하며, 같은 물리 테이블 요청을 직렬화하고 서로 다른 물리 테이블 요청은 병렬 실행 가능하게 합니다. `src/index/table_index.c`의 `registry_mutex`는 전역 `TableIndexRegistry`의 `items`, `count`, `capacity`와 인덱스 엔트리 생성/조회/무효화 상태를 보호합니다. 단, `registry_mutex`는 테이블 전체 정합성을 대신하지 않고 table lock 안쪽에서 필요한 짧은 전역 메타구조 접근만 보호합니다.
 
 세부 구조 설명은 [week8-readme-details.md](learning-docs/week8-readme-details.md) 와 [아키텍처 문서](docs/week8-architecture.md)를 참고하세요.
 
