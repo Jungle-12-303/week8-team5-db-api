@@ -67,6 +67,37 @@ client
 - `service`: API와 엔진 사이의 얇은 경계 계층입니다.
 - `engine adapter`: 기존 SQL 엔진 연결, 락, 출력 캡처, 오류 변환을 담당합니다.
 
+`engine adapter`는 기존 엔진을 직접 다시 구현하지 않고, SQL 실행에 필요한 단계들을 아래 순서로 조율합니다.
+
+```mermaid
+flowchart TD
+    subgraph API["API 서버단"]
+        Q["POST /query"] --> H["query_handler"]
+        H --> S["db_service"]
+    end
+
+    subgraph Adapter["engine adapter: 경계/조율 계층"]
+        A1["SQL 검증"] --> A2["lexer / parser 호출"]
+        A2 --> A3["schema 로딩"]
+        A3 --> A4["storage_name 기준 table lock 획득"]
+        A4 --> A5["기존 executor 실행"]
+        A5 --> A6["SELECT 출력 캡처"]
+        A6 --> A7["API result로 변환"]
+        A7 --> A8["lock / schema / AST / token 정리"]
+    end
+
+    subgraph DB["기존 DB 엔진단"]
+        D1["sql / execution"]
+        D2["storage / index"]
+        D1 --> D2
+    end
+
+    S --> A1
+    A5 --> D1
+    D2 --> A6
+    A8 --> R["JSON response"]
+```
+
 세부 구조 설명은 [week8-readme-details.md](learning-docs/week8-readme-details.md) 와 [아키텍처 문서](docs/week8-architecture.md)를 참고하세요.
 
 ## 빠른 실행
